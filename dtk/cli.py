@@ -11,10 +11,16 @@ from typing import Any, Sequence
 from .evaluation import evaluate_file, load_benchmark
 from .search import get_tag, search, search_grouped, split_concepts
 from .store import build_database, database_info, open_db
+from .research.audit import audit_research
 from .research.engine import run_research
 from .research.fetch import Fetcher
 from .research.llm import ResearchLLMClient
-from .research.queue import RESEARCH_MIN_POST_COUNT, build_research_queue
+from .research.queue import (
+    RESEARCH_MIN_POST_COUNT,
+    build_research_queue,
+    explicit_research_units,
+)
+from .research.searx import SearXNGClient
 from .research.publish import load_research_records, publish_research
 from .research.tag_task import TagResearchTask
 from .vectors import (
@@ -246,6 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--max-acts", type=int, default=6)
     research_parser.add_argument("--top-n", type=int, default=5)
     research_parser.add_argument("--types", default="general,meta")
+    research_parser.add_argument(
+        "--tag", action="append", default=[], help="explicit canonical Tag; bypasses usage cutoff"
+    )
     research_parser.add_argument("--model", default=_default_research_model())
     research_parser.add_argument("--endpoint", default=default_lm_base_url())
     research_parser.add_argument("--searx", default=_default_searx_url())
@@ -259,6 +268,12 @@ def build_parser() -> argparse.ArgumentParser:
     publish_parser.add_argument("--db", default=str(_default_db()))
     publish_parser.add_argument("--tags", required=True)
     publish_parser.add_argument("--json", action="store_true")
+
+    audit_parser = subparsers.add_parser(
+        "audit-research", help="mechanically audit research JSONL"
+    )
+    audit_parser.add_argument("records")
+    audit_parser.add_argument("--json", action="store_true")
 
     return parser
 
@@ -327,12 +342,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ValueError("--types must contain general and/or meta")
             connection = open_db(args.db)
             try:
-                units = build_research_queue(
-                    connection,
-                    limit=args.limit,
-                    min_post_count=args.min_post_count,
-                    types=selected_types,
-                )
+                if args.tag:
+                    units = explicit_research_units(connection, args.tag)
+                else:
+                    units = build_research_queue(
+                        connection,
+                        limit=args.limit,
+                        min_post_count=args.min_post_count,
+                        types=selected_types,
+                    )
             finally:
                 connection.close()
             if args.dry_run:
@@ -396,6 +414,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"documents={manifest['documents']} evidence={manifest['evidence_rows']}"
                 )
             return 0
+
+        if args.command == "audit-research":
+            result = audit_research(args.records)
+            if args.json:
+                _print_json(result)
+            else:
+                for key in (
+                    "records",
+                    "completed",
+                    "unknown",
+                    "other",
+                    "invalid",
+                    "tokens_in",
+                    "tokens_out",
+                ):
+                    print(f"{key}: {result[key]}")
+                for issue in result["issues"]:
+                    print(f"issue: {issue['tag']}: {'; '.join(issue['errors'])}")
+            return 1 if result["invalid"] else 0
 
         if args.command == "info":
             conn = open_db(args.db)

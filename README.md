@@ -37,6 +37,9 @@ python -m dtk publish-research out/research/pilot_general.jsonl --tags black_foo
 
 # 8. 发布内容变化后重建独立 research 向量索引
 python -m dtk embed-research
+
+# 9. 机械复核研究 JSONL；非零 invalid 表示需要人工处理
+python -m dtk audit-research out/research/pilot_general.jsonl
 ```
 
 Derived Store 默认写入 `data/dtk.db`，可用 `--db` 或 `DTK_DB` 覆盖。`data/` 不入 Git，Derived Store 可随时删除重建。

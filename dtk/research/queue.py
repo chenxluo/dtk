@@ -5,6 +5,8 @@ import sqlite3
 from collections.abc import Sequence
 from typing import Any
 
+from ..search import normalize_name
+
 RESEARCH_MIN_POST_COUNT = 100
 
 
@@ -72,4 +74,50 @@ def build_research_queue(
             "aliases": row["aliases"].split("\n") if row["aliases"] else [],
         }
         for row in rows
+    ]
+
+
+def explicit_research_units(
+    connection: sqlite3.Connection, names: Sequence[str]
+) -> list[dict[str, Any]]:
+    """Resolve explicit canonical names; unlike the batch queue, no usage cutoff."""
+    if not names:
+        return []
+    if len(names) > 100:
+        raise ValueError("at most 100 explicit Tags can be researched in one run")
+    keys = [normalize_name(name) for name in names]
+    placeholders = ",".join("?" for _ in keys)
+    rows = connection.execute(
+        f"""
+        SELECT
+            t.id,
+            t.name,
+            t.type,
+            t.post_count,
+            t.wiki,
+            coalesce(
+                (SELECT group_concat(a.alias, char(10))
+                 FROM aliases a WHERE a.tag_id = t.id ORDER BY a.alias),
+                ''
+            ) AS aliases
+        FROM tags t
+        WHERE t.lookup_key IN ({placeholders})
+        """,
+        keys,
+    ).fetchall()
+    by_key = {row["name"]: row for row in rows}
+    missing = [key for key in keys if key not in by_key]
+    if missing:
+        raise ValueError(f"canonical Tags not found: {missing}")
+    return [
+        {
+            "key": by_key[key]["name"],
+            "tag_id": by_key[key]["id"],
+            "tag": by_key[key]["name"],
+            "type": by_key[key]["type"],
+            "post_count": by_key[key]["post_count"],
+            "wiki": by_key[key]["wiki"],
+            "aliases": by_key[key]["aliases"].split("\n") if by_key[key]["aliases"] else [],
+        }
+        for key in keys
     ]

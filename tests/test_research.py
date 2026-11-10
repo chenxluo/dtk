@@ -367,6 +367,16 @@ class ResearchEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported research tag types"):
             build_research_queue(self.connection, types=("general", "artist"))
 
+    def test_explicit_tag_bypasses_usage_threshold(self) -> None:
+        from dtk.research.queue import explicit_research_units
+
+        units = explicit_research_units(self.connection, ["hair_band"])
+
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0]["tag"], "hair_band")
+        self.assertEqual(units[0]["post_count"], 200)
+        self.assertIsNone(units[0]["wiki"])
+
     def test_completed_research_writes_verifiable_evidence(self):
         unit = build_research_queue(self.connection, limit=1)[0]
         quote = "The test tag has a documented community meaning."
