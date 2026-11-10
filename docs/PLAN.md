@@ -36,7 +36,7 @@
 - 人工显式发布 9 个研究候选到 additive research 表（25 条语义文档、11 条证据）；`light_brown_hair`、`striped`、`white_legwear` 继续不发布。
 - 已发布研究通过 `embed-research` 生成独立 25 文档向量索引；仅余弦 ≥0.65 的研究文档进入召回。目标查询 `单眼眨眼并且张嘴笑 -> ;d` 由 Top 10 未命中改善为排名第 1，47 条 Benchmark hit@5 0.830→0.851、MRR 0.746→0.756，未见整体回归。
 - Research 内核已修复 429 重试、SSRF 私网防护、LLM 缓存键污染、零进度循环、失败成本统计与并发输出锁。
-- 新增可选 `--intent` 本地 LLM 意图门（只判断视觉查询，不生成 Tag）。48 条 Benchmark 含 1 个无意义负例：no_match_accuracy 由 0→1，正例检索指标不变；Web UI 实测返回空结果，无浏览器错误。
+- 新增可选 `--intent` 本地 LLM 意图门（只判断视觉查询，不生成 Tag）。50 条 Benchmark 含 3 个无意义/非视觉负例：no_match_accuracy 由 0→1，正例检索指标不变；Web UI 实测返回空结果，无浏览器错误。
 
 ## 里程碑
 

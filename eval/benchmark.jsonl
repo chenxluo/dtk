@@ -46,3 +46,5 @@
 {"id": "en-profile-view", "query": "side view of the face", "expected": ["profile"], "category": "semantic_en"}
 {"id": "research-pre-wink-open-smile", "query": "单眼眨眼并且张嘴笑", "expected": [";d"], "category": "research_pre"}
 {"id": "no-match-unknown-glyph", "query": "zzqq_vorpal_nonexistent_tag", "expected": [], "category": "no_match"}
+{"id": "no-match-python-compile", "query": "如何编译 Python 的 C 扩展？", "expected": [], "category": "no_match"}
+{"id": "no-match-arithmetic", "query": "计算 37 乘以 91", "expected": [], "category": "no_match"}
