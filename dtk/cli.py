@@ -15,12 +15,13 @@ from .research.engine import run_research
 from .research.fetch import Fetcher
 from .research.llm import ResearchLLMClient
 from .research.queue import RESEARCH_MIN_POST_COUNT, build_research_queue
-from .research.searx import SearXNGClient
+from .research.publish import load_research_records, publish_research
 from .research.tag_task import TagResearchTask
 from .vectors import (
     EmbeddingClient,
     VectorIndex,
     build_vector_index,
+    build_research_vector_index,
     default_embedding_model,
     default_lm_base_url,
 )
@@ -40,6 +41,9 @@ def _default_vectors() -> Path:
 
 def _default_research_model() -> str:
     return os.environ.get("DTK_RESEARCH_MODEL", "qwen3.8-27b")
+
+def _default_research_vectors() -> Path:
+    return Path(os.environ.get("DTK_RESEARCH_VECTORS", "data/research_vectors.npz"))
 
 
 def _default_searx_url() -> str:
@@ -113,6 +117,11 @@ def _add_vector_arguments(parser: argparse.ArgumentParser) -> None:
         help="vector index path (default: %(default)s; env: DTK_VECTORS)",
     )
     parser.add_argument(
+        "--research-vectors",
+        default=str(_default_research_vectors()),
+        help="published research vector index (default: %(default)s; env: DTK_RESEARCH_VECTORS)",
+    )
+    parser.add_argument(
         "--no-vectors",
         dest="vectors",
         action="store_false",
@@ -124,26 +133,40 @@ def _add_vector_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _vector_state(
     args: argparse.Namespace, queries: Sequence[str]
-) -> tuple[VectorIndex | None, dict[str, Any] | None]:
+) -> tuple[VectorIndex | None, VectorIndex | None, dict[str, Any] | None]:
     if not args.vectors:
-        return None, None
+        return None, None, None
 
+    official_index: VectorIndex | None = None
     vector_path = Path(args.vectors)
-    if not vector_path.is_file():
-        if vector_path == _default_vectors() and not os.environ.get("DTK_VECTORS"):
-            return None, None
+    if vector_path.is_file():
+        official_index = VectorIndex.load(vector_path)
+        if official_index.metadata.get("model") != args.embedding_model:
+            raise ValueError(
+                f"vector index model {official_index.metadata.get('model')!r} does not match "
+                f"--embedding-model {args.embedding_model!r}"
+            )
+    elif os.environ.get("DTK_VECTORS") or vector_path != _default_vectors():
         raise FileNotFoundError(f"vector index not found: {vector_path}")
 
-    index = VectorIndex.load(vector_path)
-    if index.metadata.get("model") != args.embedding_model:
-        raise ValueError(
-            f"vector index model {index.metadata.get('model')!r} does not match "
-            f"--embedding-model {args.embedding_model!r}"
-        )
+    research_index: VectorIndex | None = None
+    research_path = Path(args.research_vectors)
+    if research_path.is_file():
+        research_index = VectorIndex.load(research_path)
+        if research_index.metadata.get("model") != args.embedding_model:
+            raise ValueError(
+                f"research vector model {research_index.metadata.get('model')!r} does not match "
+                f"--embedding-model {args.embedding_model!r}"
+            )
+    elif os.environ.get("DTK_RESEARCH_VECTORS"):
+        raise FileNotFoundError(f"research vector index not found: {research_path}")
+
+    if official_index is None and research_index is None:
+        return None, None, None
     client = EmbeddingClient(args.endpoint, args.embedding_model)
     unique_queries = list(dict.fromkeys(queries))
     vectors = client.embed(unique_queries)
-    return index, dict(zip(unique_queries, vectors))
+    return official_index, research_index, dict(zip(unique_queries, vectors))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -172,6 +195,16 @@ def build_parser() -> argparse.ArgumentParser:
     embed_parser.add_argument("--model", default=default_embedding_model())
     embed_parser.add_argument("--endpoint", default=default_lm_base_url())
     embed_parser.add_argument("--json", action="store_true")
+
+    research_embed_parser = subparsers.add_parser(
+        "embed-research", help="build vectors for published research documents"
+    )
+    research_embed_parser.add_argument("--db", default=str(_default_db()))
+    research_embed_parser.add_argument("--out", default=str(_default_research_vectors()))
+    research_embed_parser.add_argument("--batch-size", type=int, default=32)
+    research_embed_parser.add_argument("--model", default=default_embedding_model())
+    research_embed_parser.add_argument("--endpoint", default=default_lm_base_url())
+    research_embed_parser.add_argument("--json", action="store_true")
 
     search_parser = subparsers.add_parser("search", help="search Canonical Tags")
     search_parser.add_argument("query")
@@ -219,6 +252,14 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--dry-run", action="store_true")
     research_parser.add_argument("--json", action="store_true")
 
+    publish_parser = subparsers.add_parser(
+        "publish-research", help="publish explicitly accepted research candidates"
+    )
+    publish_parser.add_argument("records")
+    publish_parser.add_argument("--db", default=str(_default_db()))
+    publish_parser.add_argument("--tags", required=True)
+    publish_parser.add_argument("--json", action="store_true")
+
     return parser
 
 
@@ -259,6 +300,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(
                     f"embedded {manifest['tag_count']} tags "
                     f"({manifest['dimensions']}d) to {args.out}"
+                )
+            return 0
+
+        if args.command == "embed-research":
+            manifest = build_research_vector_index(
+                args.db,
+                args.out,
+                EmbeddingClient(args.endpoint, args.model),
+                batch_size=args.batch_size,
+            )
+            if args.json:
+                _print_json(manifest)
+            else:
+                print(
+                    f"embedded {manifest['document_count']} research documents "
+                    f"({manifest['tag_count']} tags) to {args.out}"
                 )
             return 0
 
@@ -310,6 +367,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"{key}: {value}")
             return 0
 
+        if args.command == "publish-research":
+            accepted_tags = {
+                value.strip() for value in args.tags.split(",") if value.strip()
+            }
+            if not accepted_tags:
+                raise ValueError("--tags must name at least one accepted Tag")
+            records = [
+                record
+                for record in load_research_records(args.records)
+                if record.get("tag") in accepted_tags
+            ]
+
+            found_tags = {record.get("tag") for record in records}
+            missing_tags = accepted_tags - found_tags
+            if missing_tags:
+                raise ValueError(f"records missing accepted tags: {sorted(missing_tags)}")
+            manifest = publish_research(
+                args.db,
+                records,
+                accepted_tags=accepted_tags,
+            )
+            if args.json:
+                _print_json(manifest)
+            else:
+                print(
+                    f"published {manifest['published_tags']} tags; "
+                    f"documents={manifest['documents']} evidence={manifest['evidence_rows']}"
+                )
+            return 0
+
         if args.command == "info":
             conn = open_db(args.db)
             try:
@@ -329,6 +416,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.port,
                 db_path=args.db,
                 vectors_path=args.vectors or None,
+                research_vectors_path=args.research_vectors,
                 embedding_model=args.embedding_model,
                 lm_base_url=args.endpoint,
             )
@@ -347,7 +435,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "search":
             concepts = split_concepts(args.query)
-            vector_index, vector_map = _vector_state(args, concepts)
+            vector_index, research_index, vector_map = _vector_state(args, concepts)
             conn = open_db(args.db)
             try:
                 if len(concepts) == 1:
@@ -356,6 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.query,
                         limit=args.limit,
                         vector_index=vector_index,
+                        research_index=research_index,
                         query_vector=vector_map[concepts[0]] if vector_map else None,
                     )
                 else:
@@ -364,6 +453,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.query,
                         limit=args.limit,
                         vector_index=vector_index,
+                        research_index=research_index,
                         query_vectors=vector_map,
                     )
             finally:
@@ -392,7 +482,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "eval":
             ks = _parse_ks(args.k)
             entries = load_benchmark(args.benchmark)
-            vector_index, vector_map = _vector_state(
+            vector_index, research_index, vector_map = _vector_state(
                 args, [entry["query"] for entry in entries]
             )
             conn = open_db(args.db)
@@ -402,6 +492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.benchmark,
                     ks=ks,
                     vector_index=vector_index,
+                    research_index=research_index,
                     query_vectors=vector_map,
                 )
             finally:

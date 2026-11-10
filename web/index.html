@@ -328,9 +328,23 @@ async function loadTagDetail(name, container, button) {
     const record = await response.json();
     if (!response.ok) throw new Error(record.error || '读取详情失败');
     const details = makeElement('details', 'tag-detail');
-    const summary = makeElement('summary', '', '完整释义与别名');
+    const summary = makeElement('summary', '', '完整释义、证据与别名');
     const body = makeElement('div', 'detail-body');
-    body.textContent = record.wiki || '(此 Tag 在当前快照中没有 Wiki)';
+    let detailText = '';
+    if (record.research) {
+      detailText += `已发布研究定义：${record.research.definition_zh}\n`;
+      if (record.research.documents?.length) {
+        detailText += `\n语义表达：\n${record.research.documents.map(doc => `${doc.language.toUpperCase()} ${doc.kind}: ${doc.text}`).join('\n')}\n`;
+      }
+      if (record.research.evidence?.length) {
+        detailText += `\n证据：\n${record.research.evidence.map(item => `- ${item.quote}\n  ${item.url}`).join('\n')}\n`;
+      }
+      detailText += `\n发布时间：${record.research.published_at}\n`;
+    }
+    detailText += record.wiki
+      ? `\n官方 Wiki：\n${record.wiki}`
+      : '\n官方 Wiki：当前快照没有原文。';
+    body.textContent = detailText;
     if (record.aliases?.length) {
       body.textContent += `\n\n别名：${record.aliases.join('、')}`;
     }

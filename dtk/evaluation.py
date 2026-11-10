@@ -33,6 +33,7 @@ def evaluate_file(
     path: str | Path,
     ks: tuple[int, ...] = (5, 10),
     vector_index: VectorIndex | None = None,
+    research_index: VectorIndex | None = None,
     query_vectors: Mapping[str, np.ndarray] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Evaluate benchmark queries through the public search seam."""
@@ -54,6 +55,7 @@ def evaluate_file(
             entry["query"],
             limit=max_k,
             vector_index=vector_index,
+            research_index=research_index,
             query_vector=query_vector,
         )
         matched_by[result["matched_by"]] = matched_by.get(result["matched_by"], 0) + 1

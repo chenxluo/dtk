@@ -28,6 +28,8 @@
 2. `status=completed` 必须包含本次会话实际抓取的 URL，且 quote 是页面正文连续子串；引擎会二次校验。
 3. 资料不足、跨站语义不一致或引用无法定位时输出 `status=unknown`，unknown 是有效结果，不是失败。
 4. e621 等跨站 Wiki 只能作为外部证据，不能视为 Danbooru 官方释义；结论需说明语义对应关系。
+5. `publish-research` 必须显式传入人工接受 Tag；发布只写 additive research 表，不改官方 Wiki、Alias、Tag 字段或官方索引。
+6. 发布后需用 `embed-research` 重建独立索引；只有余弦相似度达到 0.65 的研究文档才进入召回，并在官方候选前参与 RRF。
 
 ## 查询职责
 

@@ -48,10 +48,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         query = queries[0].strip()
         vector_index = self.server.vector_index
+        research_index = self.server.research_index
         query_vector = None
         query_vectors = None
         concepts = split_concepts(query)
-        if vector_index is not None:
+        if vector_index is not None or research_index is not None:
             vectors = self.server.embedding_client.embed(concepts)
             if len(concepts) == 1:
                 query_vector = vectors[0]
@@ -66,6 +67,7 @@ class _Handler(BaseHTTPRequestHandler):
                         query,
                         limit=limit,
                         vector_index=vector_index,
+                        research_index=research_index,
                         query_vector=query_vector,
                     )
                 else:
@@ -74,6 +76,7 @@ class _Handler(BaseHTTPRequestHandler):
                         query,
                         limit=limit,
                         vector_index=vector_index,
+                        research_index=research_index,
                         query_vectors=query_vectors,
                     )
             finally:
@@ -126,21 +129,26 @@ class DTKWebServer(ThreadingHTTPServer):
         address: tuple[str, int],
         db_path: Path,
         vector_index: VectorIndex | None,
+        research_index: VectorIndex | None,
         embedding_client: EmbeddingClient,
     ) -> None:
         super().__init__(address, _Handler)
         self.db_path = db_path
         self.vector_index = vector_index
+        self.research_index = research_index
         self.embedding_client = embedding_client
 
     def health(self) -> dict[str, Any]:
         return {
-            "semantic": self.vector_index is not None,
+            "semantic": self.vector_index is not None or self.research_index is not None,
             "model": (
                 self.vector_index.metadata.get("model") if self.vector_index else None
             ),
             "indexed_tags": (
                 self.vector_index.metadata.get("tag_count") if self.vector_index else 0
+            ),
+            "research_documents": (
+                self.research_index.metadata.get("document_count") if self.research_index else 0
             ),
         }
 
@@ -150,6 +158,7 @@ def create_server(
     port: int,
     db_path: str | Path,
     vectors_path: str | Path | None = None,
+    research_vectors_path: str | Path | None = None,
     embedding_model: str | None = None,
     lm_base_url: str | None = None,
 ) -> DTKWebServer:
@@ -164,9 +173,16 @@ def create_server(
         if vector_path.is_file():
             vector_index = VectorIndex.load(vector_path)
 
+    research_index = None
+    if research_vectors_path:
+        research_vector_path = Path(research_vectors_path)
+        if research_vector_path.is_file():
+            research_index = VectorIndex.load(research_vector_path)
+
     return DTKWebServer(
         (host, port),
         database,
         vector_index,
+        research_index,
         EmbeddingClient(lm_base_url, embedding_model),
     )

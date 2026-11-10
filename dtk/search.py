@@ -14,6 +14,7 @@ from .vectors import VectorIndex
 # ponytail: fixed usage prior tuned on eval/benchmark.jsonl; make it a CLI
 # argument only if a future model/index needs a different value.
 POPULARITY_PRIOR = 0.01
+RESEARCH_VECTOR_THRESHOLD = 0.65
 
 
 
@@ -98,13 +99,14 @@ def search(
     limit: int = 10,
     vector_index: VectorIndex | None = None,
     query_vector: np.ndarray | None = None,
+    research_index: VectorIndex | None = None,
 ) -> dict[str, Any]:
     """Resolve exact names, aliases, and semantic text to Canonical Tags."""
     query = query.strip()
     if not query:
         raise ValueError("query must not be empty")
-    if (vector_index is None) != (query_vector is None):
-        raise ValueError("vector_index and query_vector must be provided together")
+    if query_vector is None and (vector_index is not None or research_index is not None):
+        raise ValueError("query_vector is required when a vector index is provided")
 
     lookup_key = normalize_name(query)
     row = conn.execute(
@@ -158,9 +160,15 @@ def search(
     candidate_limit = max(limit * 10, 100)
     expression = _fts_expression(query)
     full_text_rows = _fts_rows(conn, expression, candidate_limit) if expression else []
-    vector_hits = (
-        vector_index.find(query_vector, candidate_limit) if vector_index else []
-    )
+    vector_hits = []
+    if research_index is not None:
+        vector_hits.extend(
+            (tag_id, score)
+            for tag_id, score in research_index.find(query_vector, 10)
+            if score >= RESEARCH_VECTOR_THRESHOLD
+        )
+    if vector_index is not None:
+        vector_hits.extend(vector_index.find(query_vector, candidate_limit))
     if not full_text_rows and not vector_hits:
         return {"query": query, "matched_by": "no_match", "results": []}
 
@@ -188,7 +196,7 @@ def search(
         fts_by_id[tag_id] = fts_row
         rrf_scores[tag_id] = rrf_scores.get(tag_id, 0.0) + 1.0 / (60 + rank)
     for rank, (tag_id, score) in enumerate(vector_hits, 1):
-        vector_score_by_id[tag_id] = score
+        vector_score_by_id[tag_id] = max(vector_score_by_id.get(tag_id, score), score)
         rrf_scores[tag_id] = rrf_scores.get(tag_id, 0.0) + 1.0 / (60 + rank)
 
     rows = _tags_by_ids(conn, list(rrf_scores))
@@ -238,6 +246,7 @@ def search_grouped(
     limit: int = 10,
     vector_index: VectorIndex | None = None,
     query_vectors: Mapping[str, np.ndarray] | None = None,
+    research_index: VectorIndex | None = None,
 ) -> dict[str, Any]:
     """Search explicitly separated concepts independently and preserve grouping."""
     concepts = split_concepts(query)
@@ -247,6 +256,7 @@ def search_grouped(
             concept,
             limit=limit,
             vector_index=vector_index,
+            research_index=research_index,
             query_vector=query_vectors.get(concept) if query_vectors else None,
         )
         for concept in concepts
@@ -257,6 +267,56 @@ def search_grouped(
         "groups": groups,
     }
 
+
+
+def _research_record(conn: sqlite3.Connection, tag_id: int) -> dict[str, Any] | None:
+    exists = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'research_publications'
+        """
+    ).fetchone()
+    if exists is None:
+        return None
+    publication = conn.execute(
+        """
+        SELECT definition_zh, source_model_generated_at, published_at
+        FROM research_publications WHERE tag_id = ?
+        """,
+        (tag_id,),
+    ).fetchone()
+    if publication is None:
+        return None
+    documents = [
+        {"kind": row[0], "language": row[1], "text": row[2]}
+        for row in conn.execute(
+            """
+            SELECT kind, language, text
+            FROM research_documents WHERE tag_id = ?
+            ORDER BY kind, language, text
+            """,
+            (tag_id,),
+        )
+    ]
+    evidence = [
+        {"url": row[0], "quote": row[1]}
+        for row in conn.execute(
+            """
+            SELECT url, quote
+            FROM research_evidence WHERE tag_id = ?
+            ORDER BY url, quote
+            """,
+            (tag_id,),
+        )
+    ]
+    return {
+        "definition_zh": publication[0],
+        "review_status": "published",
+        "source_model_generated_at": publication[1],
+        "published_at": publication[2],
+        "documents": documents,
+        "evidence": evidence,
+    }
 
 def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
     """Return one canonical Tag record, or None when it does not exist."""
@@ -286,4 +346,5 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         "wiki": row["wiki"] or "",
         "wiki_excerpt": _excerpt(row["wiki"]),
         "aliases": aliases,
+        "research": _research_record(conn, row["id"]),
     }

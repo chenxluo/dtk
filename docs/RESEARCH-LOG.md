@@ -47,6 +47,73 @@ python -m dtk research --types general --limit 3 --max-acts 6 `
 
 ### 当前边界
 
-- Research Candidate 只存在于 `out/research/*.jsonl`，未进入 Derived Store、FTS 或向量索引。
+- Research Candidate 初始只存在于 `out/research/*.jsonl`；只有人工显式接受的 completed 记录才可进入 additive research 表。
+- 已发布研究目前只改善 `get_tag` 与 Web UI 解释，不参与 FTS、向量排序或官方字段。
 - SearXNG/Bing 当前返回与查询无关的结果，未通过检索质量验收；在修复前，研究 prompt 依赖明确 URL 提示。
 - e621 证据只能证明跨站语义，不能当作 Danbooru 官方释义；发布前必须保守处理别名和分类体系差异。
+
+## 2026-11-11 · 扩批到 12 个 General Tag
+
+命令同上，`--limit 12`。断点续跑跳过前 3 个，新研究 9 个。
+
+| 指标 | 扩批新增 | 累计记录 |
+|---|---:|---:|
+| 研究单元 | 9 | 12 |
+| completed | 7 | 10 |
+| unknown | 2 | 2 |
+| 结构化失败 | 0 | 0 |
+| 输入 token | 19,229 | 27,458 |
+| 输出 token | 25,299 | 34,686 |
+| 耗时 | 410.0 秒 | 约 536.5 秒 |
+
+### 人工发布决策
+
+已显式发布 9 个：
+
+- `black_footwear`
+- `white_footwear`
+- `;d`
+- `red_footwear`
+- `black_legwear`
+- `looking_away`
+- `black_headwear`
+- `blue_footwear`
+- `white_headwear`
+
+发布命令写入 additive research 表，共 25 条语义文档、11 条证据；不改官方 Wiki、Alias、Tag 字段或向量索引。
+
+继续不发布：
+
+- `light_brown_hair`：e621 alias 到 `brown_hair`，与本地快照 Alias 不一致，跨站别名不迁移。
+- `white_legwear`：未抓到可引用正文，status=unknown。
+- `striped`：e621 页面为空且仅显示跨站 alias 到 `stripes`，status=unknown。
+
+### 发布验证
+
+- `python -m dtk get black_footwear` 返回中文研究定义、语义文档与 e621 证据。
+- `python -m dtk get ';d'` 返回完整歧义说明。
+- `python -m dtk get light_brown_hair` 的 `research` 为 `null`，确认暂缓项未发布。
+- Web UI 查询「黑色鞋子或靴子」后展开 `black_footwear`，能看到已发布研究定义、语义表达与证据 URL，浏览器控制台无错误。
+
+## 2026-11-11 · Research 向量索引与 Benchmark
+
+执行 `python -m dtk embed-research`，从 25 条已发布文档生成 `data/research_vectors.npz`，不重建官方索引。
+
+先新增人工基准：`单眼眨眼并且张嘴笑 -> ;d`。接入 research 向量前，该查询 Top 10 不含 `;d`。
+
+首次合并把小型 research 索引的 25 条文档全部纳入 RRF，导致 `black_legwear`、`blue_footwear` 等无关 Tag 污染其他查询。改为：
+
+1. research 文档余弦相似度 < 0.65 直接丢弃；
+2. 达到阈值的 research 命中排在官方召回之前参与 RRF；
+3. 官方 Tag 聚合仍按 post_count 对数先验。
+
+修复后同一查询 `;d` 排名第一，原先无关污染消失。47 条 Benchmark 对照：
+
+| 指标 | 无 research 向量 | 有 research 向量 |
+|---|---:|---:|
+| hit@1 | 0.702 | 0.702 |
+| hit@5 | 0.830 | 0.851 |
+| hit@10 | 0.851 | 0.872 |
+| MRR | 0.746 | 0.756 |
+
+说明：这是针对 `;d` 的目标查询改善，不代表小样本上所有语义能力都得到充分验证；阈值需要在研究文档扩大后重新校准。

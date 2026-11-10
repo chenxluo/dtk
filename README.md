@@ -31,6 +31,12 @@ python -m dtk eval eval/benchmark.jsonl --k 1,5,10 --no-vectors
 # 6. 研究缺 Wiki 的高用量 General Tag（输出 Candidate，不自动入索引）
 python -m dtk research --types general --limit 10 --dry-run
 python -m dtk research --types general --limit 10
+
+# 7. 人工审核 out/research 后，显式发布接受的研究候选（不改官方 Wiki）
+python -m dtk publish-research out/research/pilot_general.jsonl --tags black_footwear,white_footwear
+
+# 8. 发布内容变化后重建独立 research 向量索引
+python -m dtk embed-research
 ```
 
 Derived Store 默认写入 `data/dtk.db`，可用 `--db` 或 `DTK_DB` 覆盖。`data/` 不入 Git，Derived Store 可随时删除重建。

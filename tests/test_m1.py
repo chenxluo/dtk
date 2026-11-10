@@ -142,6 +142,51 @@ class ImportAndSearchTests(unittest.TestCase):
         self.assertIn("very long hair", record["aliases"])
         self.assertTrue(record["wiki"].startswith("Hair that extends"))
 
+    def test_research_vector_index_improves_semantic_recall(self) -> None:
+        official = VectorIndex(
+            tag_ids=np.array([2], dtype=np.int64),
+            matrix=np.array([[0.0, 1.0]], dtype=np.float32),
+        )
+        research = VectorIndex(
+            tag_ids=np.array([1], dtype=np.int64),
+            matrix=np.array([[1.0, 0.0]], dtype=np.float32),
+        )
+        with self.derived_store() as conn:
+            result = search(
+                conn,
+                "眨眼并张嘴笑",
+                limit=3,
+                vector_index=official,
+                query_vector=np.array([1.0, 0.0], dtype=np.float32),
+                research_index=research,
+            )
+
+        self.assertEqual(result["matched_by"], "vector")
+        self.assertEqual(result["results"][0]["tag"], "looking_at_viewer")
+        self.assertGreater(result["results"][0]["vector_score"], 0.99)
+
+    def test_low_similarity_research_vectors_do_not_pollute_results(self) -> None:
+        official = VectorIndex(
+            tag_ids=np.array([2], dtype=np.int64),
+            matrix=np.array([[0.0, 1.0]], dtype=np.float32),
+        )
+        research = VectorIndex(
+            tag_ids=np.array([1], dtype=np.int64),
+            matrix=np.array([[1.0, 0.0]], dtype=np.float32),
+        )
+        with self.derived_store() as conn:
+            result = search(
+                conn,
+                "无关的视觉描述",
+                limit=3,
+                vector_index=official,
+                query_vector=np.array([0.0, 1.0], dtype=np.float32),
+                research_index=research,
+            )
+
+        self.assertEqual(result["results"][0]["tag"], "long_hair")
+        self.assertNotIn("looking_at_viewer", [item["tag"] for item in result["results"]])
+
     def test_benchmark_evaluation_reports_hits_and_failures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             benchmark = Path(tmp) / "benchmark.jsonl"

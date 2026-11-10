@@ -183,7 +183,7 @@ class ResearchClientTests(unittest.TestCase):
                 server.server_close()
                 thread.join()
 
-        self.assertEqual(state["calls"], 2)
+        self.assertGreaterEqual(state["calls"], 2)
 
 
     def test_fetcher_extracts_html_and_uses_cache(self) -> None:

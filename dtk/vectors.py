@@ -95,8 +95,7 @@ class VectorIndex:
             raise ValueError("tag_ids must be 1-D and matrix must be 2-D")
         if len(self.tag_ids) != len(self.matrix) or len(self.tag_ids) == 0:
             raise ValueError("tag_ids and matrix must have the same non-zero length")
-        if np.unique(self.tag_ids).size != self.tag_ids.size:
-            raise ValueError("tag_ids must be unique")
+        # Duplicate tag_ids are allowed: one Tag may have many semantic documents.
         if not np.issubdtype(self.tag_ids.dtype, np.integer):
             raise ValueError("tag_ids must contain integers")
 
@@ -237,6 +236,63 @@ def build_vector_index(
             "dimensions": int(matrix.shape[1]),
             "tag_count": int(matrix.shape[0]),
             "min_post_count": int(min_post_count),
+            "built_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    index.save(output_path)
+    return dict(index.metadata)
+
+
+def build_research_vector_index(
+    db_path: str | Path,
+    output_path: str | Path,
+    client: EmbeddingClient,
+    batch_size: int = 32,
+) -> dict[str, Any]:
+    """Embed published research documents without rebuilding the official index."""
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    conn = open_db(db_path)
+    try:
+        table_exists = conn.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'research_documents'
+            """
+        ).fetchone()
+        if table_exists is None:
+            raise ValueError("no published research documents found")
+        rows = conn.execute(
+            """
+            SELECT rd.tag_id, rd.kind, rd.language, rd.text, t.name
+            FROM research_documents rd
+            JOIN tags t ON t.id = rd.tag_id
+            ORDER BY rd.tag_id, rd.kind, rd.language, rd.text
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        raise ValueError("no published research documents found")
+
+    texts = [
+        f"{row['name'].replace('_', ' ')}\n{row['kind']} {row['language']}\n{row['text']}"
+        for row in rows
+    ]
+    vectors: list[np.ndarray] = []
+    for start in range(0, len(texts), batch_size):
+        vectors.append(client.embed(texts[start : start + batch_size]))
+    matrix = np.concatenate(vectors, axis=0).astype(np.float16)
+    index = VectorIndex(
+        tag_ids=np.asarray([row["tag_id"] for row in rows], dtype=np.int64),
+        matrix=matrix,
+        metadata={
+            "dtk_vector_schema_version": VECTOR_SCHEMA_VERSION,
+            "kind": "published_research_documents_v1",
+            "model": client.model,
+            "dimensions": int(matrix.shape[1]),
+            "document_count": int(matrix.shape[0]),
+            "tag_count": int(len({row["tag_id"] for row in rows})),
             "built_at": datetime.now(timezone.utc).isoformat(),
         },
     )
