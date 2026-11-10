@@ -61,6 +61,23 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["groups"][0]["results"][0]["tag"], "looking_at_viewer")
         self.assertEqual(payload["groups"][1]["results"][0]["tag"], "long_hair")
 
+    def test_tag_endpoint_returns_published_research(self) -> None:
+        from dtk.research.publish import publish_research
+        from tests.test_publish import completed_record
+
+        record = completed_record(4, "hair_ornament", "A verbatim evidence sentence.")
+        publish_research(
+            self.server.db_path,
+            [record],
+            accepted_tags={"hair_ornament"},
+        )
+        status, body = self.request("/api/tag?name=hair_ornament")
+        payload = json.loads(body)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["research"]["review_status"], "published")
+        self.assertIn("视觉含义", payload["research"]["definition_zh"])
+
     def test_home_page_serves_query_interface(self) -> None:
         status, body = self.request("/")
 

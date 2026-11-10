@@ -32,6 +32,8 @@ python -m dtk eval eval/benchmark.jsonl --k 1,5,10 --intent
 # 6. 研究缺 Wiki 的高用量 General Tag（输出 Candidate，不自动入索引）
 python -m dtk research --types general --limit 10 --dry-run
 python -m dtk research --types general --limit 10
+# 显式指定 Canonical Tag 可绕过图量门槛，例如用于人工例外
+python -m dtk research --tag looking_at_viewer --dry-run
 
 # 7. 人工审核 out/research 后，显式发布接受的研究候选（不改官方 Wiki）
 python -m dtk publish-research out/research/pilot_general.jsonl --tags black_footwear,white_footwear

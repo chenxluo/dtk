@@ -117,3 +117,27 @@ python -m dtk research --types general --limit 3 --max-acts 6 `
 | MRR | 0.746 | 0.756 |
 
 说明：这是针对 `;d` 的目标查询改善，不代表小样本上所有语义能力都得到充分验证；阈值需要在研究文档扩大后重新校准。
+
+## 2026-11-11 · 扩到 50 个高用量缺 Wiki General Tag
+
+命令使用 `--limit 50`；断点跳过已有 12 个，新研究 38 个。
+
+| 指标 | 本轮新增 | 累计 |
+|---|---:|---:|
+| 研究单元 | 38 | 50 |
+| completed | 26 | 36 |
+| unknown | 12 | 14 |
+| 结构化失败 | 0 | 0 |
+| 输入 token | 114,609 | 142,067 |
+| 输出 token | 106,599 | 141,285 |
+| 耗时 | 1,840.7 秒 | 约 39.6 分钟 |
+
+机械审核结果：`python -m dtk audit-research` 为 records=50、invalid=0。所有 completed 的 quote 都能重新定位到记录中的抓取正文；这不等于人工语义审核通过。
+
+unknown 共 14 个：
+
+`white_legwear`、`striped`、`cross-laced_footwear`、`french_braid`、`multicolored_background`、`remodel_(kantai_collection)`、`;o`、`oni_horns`、`wall`、`leaning_on_person`、`disembodied_linked_eye`、`missing_headwear`、`blue_neckwear`、`pink_headwear`。
+
+其中 `remodel_(kantai_collection)` 与 `oni_horns` 用尽 6 个动作后仍未知；预算耗尽没有生成伪定义。`pink_headwear` 未获取有效页面，直接 unknown。
+
+本轮没有新增发布。新增 completed 中有多条只得到 e621 别名信息（例如 `light_blue_hair`、`dark_blue_hair`、`qipao`、`beige_background`），在本地 Danbooru 快照缺少对应官方关系时，不把跨站别名迁移进知识库。这些 Tag 仍保留原始候选，等本站恢复或人工审核后处理。

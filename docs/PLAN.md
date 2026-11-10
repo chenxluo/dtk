@@ -32,7 +32,7 @@
 - M2 混合检索：hit@1 0.717、hit@5 0.848、hit@10 0.870、MRR 0.763；精确名与 Alias 优先级不变。
 - 单条语义查询实测：Embedding 约 38–61ms，本机向量检索约 273–337ms。
 - Web UI 已验证中文语义、详情展开、多概念分组（如「角色直视观众，非常长的头发」分别命中 `looking_at_viewer` 与 `long_hair`）。
-- M3 研究内核完成 12 个高用量 General Tag 试点：completed 10、unknown 2、结构化失败 0；逐字证据校验通过，累计 27,458 输入 / 34,686 输出 token。
+- M3 研究内核完成 50 个高用量 General Tag 试点：completed 36、unknown 14、结构化失败 0；机械审核 invalid=0，累计 142,067 输入 / 141,285 输出 token。
 - 人工显式发布 9 个研究候选到 additive research 表（25 条语义文档、11 条证据）；`light_brown_hair`、`striped`、`white_legwear` 继续不发布。
 - 已发布研究通过 `embed-research` 生成独立 25 文档向量索引；仅余弦 ≥0.65 的研究文档进入召回。目标查询 `单眼眨眼并且张嘴笑 -> ;d` 由 Top 10 未命中改善为排名第 1，47 条 Benchmark hit@5 0.830→0.851、MRR 0.746→0.756，未见整体回归。
 - Research 内核已修复 429 重试、SSRF 私网防护、LLM 缓存键污染、零进度循环、失败成本统计与并发输出锁。
