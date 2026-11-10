@@ -20,6 +20,7 @@ python -m dtk search "角色直视观众，非常长的头发" --limit 5
 python -m dtk search "角色直视观众" --no-vectors
 python -m dtk get looking_at_viewer
 python -m dtk info
+python -m dtk related black_footwear --min-count 100 --limit 20
 
 # 4. 启动本地人类查询界面
 python -m dtk serve --port 8765

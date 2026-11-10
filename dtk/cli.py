@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from .evaluation import evaluate_file, load_benchmark
 from .intent import IntentClassifier
+from .relations import cooccurring_tags
 from .search import get_tag, search, search_grouped, split_concepts
 from .store import build_database, database_info, open_db
 from .research.audit import audit_research
@@ -240,6 +241,16 @@ def build_parser() -> argparse.ArgumentParser:
     get_parser.add_argument("tag")
     get_parser.add_argument("--json", action="store_true")
     _add_db_argument(get_parser)
+
+    related_parser = subparsers.add_parser(
+        "related", help="show co-occurring General/Meta Tags ranked by Lift"
+    )
+    related_parser.add_argument("tag")
+    related_parser.add_argument("--limit", type=int, default=20)
+    related_parser.add_argument("--min-count", type=int, default=20)
+    related_parser.add_argument("--cache", default="cache/cooccurrence")
+    related_parser.add_argument("--json", action="store_true")
+    _add_db_argument(related_parser)
 
     info_parser = subparsers.add_parser("info", help="show snapshot and import manifest")
     info_parser.add_argument("--json", action="store_true")
@@ -536,6 +547,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_json(record)
             else:
                 _print_tag(record)
+            return 0
+
+        if args.command == "related":
+            conn = open_db(args.db)
+            try:
+                result = cooccurring_tags(
+                    conn,
+                    args.tag,
+                    limit=args.limit,
+                    min_count=args.min_count,
+                    cache_dir=args.cache,
+                )
+            finally:
+                conn.close()
+            if args.json:
+                _print_json(result)
+            else:
+                print(f"tag: {result['tag']}")
+                print(f"matched_by: {result['matched_by']}")
+                for item in result["results"]:
+                    print(
+                        f"{item['tag']} posts={item['post_count']} "
+                        f"cooccurrence={item['cooccurrence_count']} lift={item['lift']:.3f}"
+                    )
             return 0
 
         if args.command == "eval":
