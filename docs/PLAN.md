@@ -38,6 +38,7 @@
 - Research 内核已修复 429 重试、SSRF 私网防护、LLM 缓存键污染、零进度循环、失败成本统计与并发输出锁。
 - 新增可选 `--intent` 本地 LLM 意图门（只判断视觉查询，不生成 Tag）。50 条 Benchmark 含 3 个无意义/非视觉负例：no_match_accuracy 由 0→1，正例检索指标不变；Web UI 实测返回空结果，无浏览器错误。
 - M4 已增加按需共现关系：CLI `related` 使用本地 post_tags、共现阈值和 Lift 排序，并提供包含快照身份的磁盘缓存；真实 `black_footwear` 查询验证通过，冷计算仍需离线预算。官方 Implication 继续等待本站恢复。
+- M5 已提供本地 REST 与 stdio MCP 薄封装，Agent 工具为 `search_tags`/`get_tags`；真实 MCP 进程与语义搜索验证通过。研究写入接口不对外暴露，接入方式见 `docs/AGENT.md`。
 
 ## 里程碑
 

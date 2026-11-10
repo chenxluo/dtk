@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from .evaluation import evaluate_file, load_benchmark
 from .intent import IntentClassifier
+from .mcp import StdioMCPServer, run_stdio
 from .relations import cooccurring_tags
 from .search import get_tag, search, search_grouped, split_concepts
 from .store import build_database, database_info, open_db
@@ -269,6 +270,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_argument(serve_parser)
     _add_vector_arguments(serve_parser)
 
+    mcp_parser = subparsers.add_parser(
+        "mcp", help="serve read-only Tag tools over stdio MCP"
+    )
+    _add_db_argument(mcp_parser)
+    _add_vector_arguments(mcp_parser)
+
     research_parser = subparsers.add_parser(
         "research", help="research missing-Wiki Tags into candidate JSONL"
     )
@@ -498,6 +505,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("\nDTK web UI stopped")
             finally:
                 server.server_close()
+            return 0
+
+        if args.command == "mcp":
+            vector_index, research_index, _ = _vector_state(args, [])
+            server = StdioMCPServer(
+                args.db,
+                vector_index=vector_index,
+                research_index=research_index,
+                embedding_client=EmbeddingClient(args.endpoint, args.embedding_model),
+                intent_parser=_intent_state(args),
+            )
+            run_stdio(server)
             return 0
 
         if args.command == "search":

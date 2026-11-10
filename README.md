@@ -44,6 +44,9 @@ python -m dtk embed-research
 
 # 9. 机械复核研究 JSONL；非零 invalid 表示需要人工处理
 python -m dtk audit-research out/research/pilot_general.jsonl
+
+# 10. 供 Agent 使用的只读 MCP（stdio）
+python -m dtk mcp --db data/dtk.db
 ```
 
 Derived Store 默认写入 `data/dtk.db`，可用 `--db` 或 `DTK_DB` 覆盖。`data/` 不入 Git，Derived Store 可随时删除重建。
@@ -67,3 +70,4 @@ python -m unittest discover -s tests -v
 - 领域语言：`CONTEXT.md`
 - 架构决策：`docs/adr/`
 - 研究试点记录：`docs/RESEARCH-LOG.md`
+- Agent 接入：`docs/AGENT.md`
