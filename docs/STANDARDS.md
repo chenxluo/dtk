@@ -22,6 +22,13 @@
 3. 图量低于门槛的 Tag 仅在用户显式指定时研究，检索失败不自动降低门槛。
 4. 研究分层：缺 Wiki、缺中文语义、检索失败线索分别排队，不混合排序。
 
+## 研究产物
+
+1. Research Candidate 只写入 `out/research/*.jsonl`，不入 Git、不进 Derived Store、不进向量索引。
+2. `status=completed` 必须包含本次会话实际抓取的 URL，且 quote 是页面正文连续子串；引擎会二次校验。
+3. 资料不足、跨站语义不一致或引用无法定位时输出 `status=unknown`，unknown 是有效结果，不是失败。
+4. e621 等跨站 Wiki 只能作为外部证据，不能视为 Danbooru 官方释义；结论需说明语义对应关系。
+
 ## 查询职责
 
 1. Retrieval 只读，不得触发研究、写库或重建索引。

@@ -32,6 +32,9 @@
 - M2 混合检索：hit@1 0.717、hit@5 0.848、hit@10 0.870、MRR 0.763；精确名与 Alias 优先级不变。
 - 单条语义查询实测：Embedding 约 38–61ms，本机向量检索约 273–337ms。
 - Web UI 已验证中文语义、详情展开、多概念分组（如「角色直视观众，非常长的头发」分别命中 `looking_at_viewer` 与 `long_hair`）。
+- M3 研究内核完成首轮真实试点：3 个高用量 General Tag 结构化成功 3/3，逐字证据校验 3/3；详见 `docs/RESEARCH-LOG.md`。
+- 试点候选未发布：`black_footwear`、`white_footwear` 人工接受为 Candidate，`light_brown_hair` 因跨站别名差异暂缓；没有任何 Candidate 进入检索索引。
+- Research 内核已修复 429 重试、SSRF 私网防护、LLM 缓存键污染、零进度循环、失败成本统计与并发输出锁。
 
 ## 里程碑
 

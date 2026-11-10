@@ -11,6 +11,12 @@ from typing import Any, Sequence
 from .evaluation import evaluate_file, load_benchmark
 from .search import get_tag, search, search_grouped, split_concepts
 from .store import build_database, database_info, open_db
+from .research.engine import run_research
+from .research.fetch import Fetcher
+from .research.llm import ResearchLLMClient
+from .research.queue import RESEARCH_MIN_POST_COUNT, build_research_queue
+from .research.searx import SearXNGClient
+from .research.tag_task import TagResearchTask
 from .vectors import (
     EmbeddingClient,
     VectorIndex,
@@ -31,6 +37,13 @@ def _default_source() -> str | None:
 
 def _default_vectors() -> Path:
     return Path(os.environ.get("DTK_VECTORS", "data/dtk_vectors.npz"))
+
+def _default_research_model() -> str:
+    return os.environ.get("DTK_RESEARCH_MODEL", "qwen3.8-27b")
+
+
+def _default_searx_url() -> str:
+    return os.environ.get("DTK_SEARX_URL", "http://127.0.0.1:8989")
 
 
 def _print_json(value: Any) -> None:
@@ -189,6 +202,23 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_argument(serve_parser)
     _add_vector_arguments(serve_parser)
 
+    research_parser = subparsers.add_parser(
+        "research", help="research missing-Wiki Tags into candidate JSONL"
+    )
+    research_parser.add_argument("--db", default=str(_default_db()))
+    research_parser.add_argument("--out", default="out/research/missing_wiki.jsonl")
+    research_parser.add_argument("--cache", default="cache/research")
+    research_parser.add_argument("--limit", type=int, default=10)
+    research_parser.add_argument("--min-post-count", type=int, default=RESEARCH_MIN_POST_COUNT)
+    research_parser.add_argument("--max-acts", type=int, default=6)
+    research_parser.add_argument("--top-n", type=int, default=5)
+    research_parser.add_argument("--types", default="general,meta")
+    research_parser.add_argument("--model", default=_default_research_model())
+    research_parser.add_argument("--endpoint", default=default_lm_base_url())
+    research_parser.add_argument("--searx", default=_default_searx_url())
+    research_parser.add_argument("--dry-run", action="store_true")
+    research_parser.add_argument("--json", action="store_true")
+
     return parser
 
 
@@ -230,6 +260,54 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"embedded {manifest['tag_count']} tags "
                     f"({manifest['dimensions']}d) to {args.out}"
                 )
+            return 0
+
+        if args.command == "research":
+            selected_types = tuple(
+                value.strip() for value in args.types.split(",") if value.strip()
+            )
+            if not selected_types:
+                raise ValueError("--types must contain general and/or meta")
+            connection = open_db(args.db)
+            try:
+                units = build_research_queue(
+                    connection,
+                    limit=args.limit,
+                    min_post_count=args.min_post_count,
+                    types=selected_types,
+                )
+            finally:
+                connection.close()
+            if args.dry_run:
+                if args.json:
+                    _print_json(units)
+                else:
+                    for unit in units:
+                        print(
+                            f"{unit['post_count']:>8} {unit['tag']} [{unit['type']}]"
+                        )
+                return 0
+
+            stats = run_research(
+                TagResearchTask(),
+                units,
+                args.out,
+                llm=ResearchLLMClient(
+                    args.endpoint,
+                    args.model,
+                    cache_dir=args.cache,
+                ),
+                search=SearXNGClient(args.searx, cache_dir=args.cache),
+                fetcher=Fetcher(cache_dir=args.cache),
+                max_acts=args.max_acts,
+                top_n=args.top_n,
+            )
+            stats["output"] = args.out
+            if args.json:
+                _print_json(stats)
+            else:
+                for key, value in stats.items():
+                    print(f"{key}: {value}")
             return 0
 
         if args.command == "info":

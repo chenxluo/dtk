@@ -27,6 +27,10 @@ python -m dtk serve --port 8765
 # 5. 检索评测；--no-vectors 可复跑 M1 FTS 基线
 python -m dtk eval eval/benchmark.jsonl --k 1,5,10
 python -m dtk eval eval/benchmark.jsonl --k 1,5,10 --no-vectors
+
+# 6. 研究缺 Wiki 的高用量 General Tag（输出 Candidate，不自动入索引）
+python -m dtk research --types general --limit 10 --dry-run
+python -m dtk research --types general --limit 10
 ```
 
 Derived Store 默认写入 `data/dtk.db`，可用 `--db` 或 `DTK_DB` 覆盖。`data/` 不入 Git，Derived Store 可随时删除重建。
@@ -49,3 +53,4 @@ python -m unittest discover -s tests -v
 - 施工规范：`docs/STANDARDS.md`
 - 领域语言：`CONTEXT.md`
 - 架构决策：`docs/adr/`
+- 研究试点记录：`docs/RESEARCH-LOG.md`
