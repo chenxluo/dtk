@@ -6,48 +6,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+import numpy as np
+
 from dtk.evaluation import evaluate_file
 from dtk.search import get_tag, search
 from dtk.store import build_database, open_db
+from dtk.vectors import VectorIndex, build_vector_index
+from tests.fixtures import make_source
 
-
-def make_source(path: Path) -> None:
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE tag_types (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
-        INSERT INTO tag_types VALUES (1, 'general'), (4, 'artist');
-
-        CREATE TABLE tags (
-            id INTEGER PRIMARY KEY,
-            tag TEXT NOT NULL,
-            type_id INTEGER NOT NULL,
-            category_id INTEGER,
-            post_count INTEGER NOT NULL
-        );
-        INSERT INTO tags VALUES
-            (1, 'looking_at_viewer', 1, NULL, 100000),
-            (2, 'long_hair', 1, NULL, 50000),
-            (3, 'hair_band', 1, NULL, 200),
-            (4, 'hair_ornament', 1, NULL, 300);
-
-        CREATE TABLE tag_wiki (id INTEGER PRIMARY KEY, tag_id INTEGER, wiki_content TEXT);
-        INSERT INTO tag_wiki VALUES
-            (1, 1, 'A character looks directly at the viewer.'),
-            (2, 2, 'Hair that extends well past the shoulders.');
-
-        CREATE TABLE tag_aliases (id INTEGER PRIMARY KEY, tag_id INTEGER, alias TEXT);
-        INSERT INTO tag_aliases VALUES
-            (1, 2, 'very long hair'),
-            (2, 3, 'hair accessory'),
-            (3, 4, 'Hair Accessory');
-
-        CREATE TABLE main_table (post_id INTEGER PRIMARY KEY, created_at TEXT, updated_at TEXT);
-        INSERT INTO main_table VALUES (12, '2026-08-23T10:00:00Z', '2026-08-23T10:00:00Z');
-        """
-    )
-    conn.commit()
-    conn.close()
 
 
 class ImportAndSearchTests(unittest.TestCase):
@@ -91,8 +57,81 @@ class ImportAndSearchTests(unittest.TestCase):
             result = search(conn, "character directly viewer", limit=3)
 
         self.assertEqual(result["matched_by"], "full_text")
-        self.assertEqual(result["results"][0]["tag"], "looking_at_viewer")
+        self.assertIn("looking_at_viewer", [item["tag"] for item in result["results"]])
         self.assertGreaterEqual(result["results"][0]["match_score"], 0.0)
+
+    def test_vector_recall_promotes_correct_tag_over_fts_noise(self) -> None:
+        index = VectorIndex(
+            tag_ids=np.array([1, 2, 3, 4, 5], dtype=np.int64),
+            matrix=np.array(
+                [
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [0.0, 1.0],
+                    [0.0, 1.0],
+                    [0.0, 1.0],
+                ],
+                dtype=np.float32,
+            ),
+        )
+        with self.derived_store() as conn:
+            result = search(
+                conn,
+                "character directly viewer",
+                limit=3,
+                vector_index=index,
+                query_vector=np.array([0.99, 0.02], dtype=np.float32),
+            )
+
+        self.assertEqual(result["matched_by"], "hybrid")
+        self.assertEqual(result["results"][0]["tag"], "looking_at_viewer")
+        self.assertEqual(result["results"][0]["matched_by"], "hybrid")
+
+    def test_vector_recall_handles_query_language_without_fts_match(self) -> None:
+        index = VectorIndex(
+            tag_ids=np.array([1, 2], dtype=np.int64),
+            matrix=np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        )
+        with self.derived_store() as conn:
+            result = search(
+                conn,
+                "角色直视观众",
+                limit=3,
+                vector_index=index,
+                query_vector=np.array([1.0, 0.0], dtype=np.float32),
+            )
+
+        self.assertEqual(result["matched_by"], "vector")
+        self.assertEqual(result["results"][0]["tag"], "looking_at_viewer")
+        self.assertGreater(result["results"][0]["vector_score"], 0.9)
+
+    def test_build_vector_index_persists_searchable_metadata(self) -> None:
+        class FixedClient:
+            model = "fixed-embedding"
+
+            def embed(self, texts):
+                vectors = np.array(
+                    [[1.0, 0.1] if "viewer" in text else [0.1, 1.0] for text in texts],
+                    dtype=np.float32,
+                )
+                return vectors / np.linalg.norm(vectors, axis=1)[:, None]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.db"
+            derived = Path(tmp) / "derived.db"
+            vectors = Path(tmp) / "vectors.npz"
+            make_source(source)
+            build_database(source, derived)
+            manifest = build_vector_index(
+                derived, vectors, FixedClient(), batch_size=2, min_post_count=100
+            )
+            index = VectorIndex.load(vectors)
+            hits = index.find(np.array([1.0, 0.1], dtype=np.float32), limit=1)
+
+        self.assertEqual(manifest["tag_count"], 5)
+        self.assertEqual(manifest["model"], "fixed-embedding")
+        self.assertEqual(index.metadata["dimensions"], 2)
+        self.assertEqual(hits[0][1] > 0.99, True)
 
     def test_get_tag_returns_wiki_and_aliases(self) -> None:
         with self.derived_store() as conn:

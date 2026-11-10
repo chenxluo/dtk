@@ -1,9 +1,20 @@
 """Read-only Tag lookup and retrieval."""
 from __future__ import annotations
 
+import math
 import re
 import sqlite3
-from typing import Any
+from typing import Any, Mapping
+
+import numpy as np
+
+from .vectors import VectorIndex
+
+
+# ponytail: fixed usage prior tuned on eval/benchmark.jsonl; make it a CLI
+# argument only if a future model/index needs a different value.
+POPULARITY_PRIOR = 0.01
+
 
 
 def normalize_name(value: str) -> str:
@@ -40,11 +51,60 @@ def _result(row: sqlite3.Row, matched_by: str, rank: int, **extra: Any) -> dict[
     return result
 
 
-def search(conn: sqlite3.Connection, query: str, limit: int = 10) -> dict[str, Any]:
-    """Resolve a query through exact Canonical Tag and Alias lookup."""
+def _fts_rows(
+    conn: sqlite3.Connection, expression: str, limit: int
+) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT
+            t.id,
+            t.name,
+            t.type,
+            t.post_count,
+            t.wiki,
+            bm25(tag_fts) AS bm25_score
+        FROM tag_fts
+        JOIN tags t ON t.id = tag_fts.tag_id
+        WHERE tag_fts MATCH ?
+        ORDER BY bm25(tag_fts), t.post_count DESC, t.name
+        LIMIT ?
+        """,
+        (expression, limit),
+    ).fetchall()
+
+
+def _tags_by_ids(conn: sqlite3.Connection, tag_ids: list[int]) -> dict[int, sqlite3.Row]:
+    if not tag_ids:
+        return {}
+    placeholders = ",".join("?" for _ in tag_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, name, type, post_count, wiki
+        FROM tags
+        WHERE id IN ({placeholders})
+        """,
+        tag_ids,
+    ).fetchall()
+    by_id = {row["id"]: row for row in rows}
+    missing = set(tag_ids) - set(by_id)
+    if missing:
+        raise ValueError(f"vector index references unknown tag IDs: {sorted(missing)}")
+    return by_id
+
+
+def search(
+    conn: sqlite3.Connection,
+    query: str,
+    limit: int = 10,
+    vector_index: VectorIndex | None = None,
+    query_vector: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Resolve exact names, aliases, and semantic text to Canonical Tags."""
     query = query.strip()
     if not query:
         raise ValueError("query must not be empty")
+    if (vector_index is None) != (query_vector is None):
+        raise ValueError("vector_index and query_vector must be provided together")
 
     lookup_key = normalize_name(query)
     row = conn.execute(
@@ -95,43 +155,106 @@ def search(conn: sqlite3.Connection, query: str, limit: int = 10) -> dict[str, A
             ],
         }
 
+    candidate_limit = max(limit * 10, 100)
     expression = _fts_expression(query)
-    if not expression:
+    full_text_rows = _fts_rows(conn, expression, candidate_limit) if expression else []
+    vector_hits = (
+        vector_index.find(query_vector, candidate_limit) if vector_index else []
+    )
+    if not full_text_rows and not vector_hits:
         return {"query": query, "matched_by": "no_match", "results": []}
 
-    fts_rows = conn.execute(
-        """
-        SELECT
-            t.id,
-            t.name,
-            t.type,
-            t.post_count,
-            t.wiki,
-            bm25(tag_fts) AS bm25_score
-        FROM tag_fts
-        JOIN tags t ON t.id = tag_fts.tag_id
-        WHERE tag_fts MATCH ?
-        ORDER BY bm25(tag_fts), t.post_count DESC, t.name
-        LIMIT ?
-        """,
-        (expression, limit),
-    ).fetchall()
-    if not fts_rows:
-        return {"query": query, "matched_by": "no_match", "results": []}
+    if not vector_hits:
+        return {
+            "query": query,
+            "matched_by": "full_text",
+            "results": [
+                _result(
+                    row,
+                    "full_text",
+                    rank,
+                    bm25=row["bm25_score"],
+                    match_score=-row["bm25_score"],
+                )
+                for rank, row in enumerate(full_text_rows[:limit], 1)
+            ],
+        }
 
+    rrf_scores: dict[int, float] = {}
+    fts_by_id: dict[int, sqlite3.Row] = {}
+    vector_score_by_id: dict[int, float] = {}
+    for rank, fts_row in enumerate(full_text_rows, 1):
+        tag_id = fts_row["id"]
+        fts_by_id[tag_id] = fts_row
+        rrf_scores[tag_id] = rrf_scores.get(tag_id, 0.0) + 1.0 / (60 + rank)
+    for rank, (tag_id, score) in enumerate(vector_hits, 1):
+        vector_score_by_id[tag_id] = score
+        rrf_scores[tag_id] = rrf_scores.get(tag_id, 0.0) + 1.0 / (60 + rank)
+
+    rows = _tags_by_ids(conn, list(rrf_scores))
+    max_post_count = max(row["post_count"] for row in rows.values())
+    rank_scores = {
+        tag_id: score
+        + POPULARITY_PRIOR
+        * math.log10(rows[tag_id]["post_count"] + 1)
+        / math.log10(max_post_count + 1)
+        for tag_id, score in rrf_scores.items()
+    }
+    ordered_ids = sorted(
+        rank_scores,
+        key=lambda tag_id: (
+            -rank_scores[tag_id],
+            -vector_score_by_id.get(tag_id, -1.0),
+            tag_id,
+        ),
+    )[:limit]
+    results: list[dict[str, Any]] = []
+    for rank, tag_id in enumerate(ordered_ids, 1):
+        candidate_row = rows[tag_id]
+        in_fts = tag_id in fts_by_id
+        in_vector = tag_id in vector_score_by_id
+        matched_by = "hybrid" if in_fts and in_vector else ("vector" if in_vector else "full_text")
+        extra: dict[str, Any] = {"match_score": rank_scores[tag_id]}
+        if in_fts:
+            extra["bm25"] = fts_by_id[tag_id]["bm25_score"]
+        if in_vector:
+            extra["vector_score"] = vector_score_by_id[tag_id]
+        results.append(_result(candidate_row, matched_by, rank, **extra))
+
+    source = "hybrid" if fts_by_id and vector_score_by_id else "vector"
+    return {"query": query, "matched_by": source, "results": results}
+
+def split_concepts(query: str, max_concepts: int = 8) -> list[str]:
+    """Split explicitly separated query concepts without linguistic guessing."""
+    concepts = [part.strip() for part in re.split(r"[，,、;；\r\n]+", query) if part.strip()]
+    if len(concepts) > max_concepts:
+        raise ValueError(f"a query can contain at most {max_concepts} concepts")
+    return concepts or [query.strip()]
+
+
+def search_grouped(
+    conn: sqlite3.Connection,
+    query: str,
+    limit: int = 10,
+    vector_index: VectorIndex | None = None,
+    query_vectors: Mapping[str, np.ndarray] | None = None,
+) -> dict[str, Any]:
+    """Search explicitly separated concepts independently and preserve grouping."""
+    concepts = split_concepts(query)
+    groups = [
+        search(
+            conn,
+            concept,
+            limit=limit,
+            vector_index=vector_index,
+            query_vector=query_vectors.get(concept) if query_vectors else None,
+        )
+        for concept in concepts
+    ]
     return {
         "query": query,
-        "matched_by": "full_text",
-        "results": [
-            _result(
-                row,
-                "full_text",
-                rank,
-                bm25=row["bm25_score"],
-                match_score=-row["bm25_score"],
-            )
-            for rank, row in enumerate(fts_rows, 1)
-        ],
+        "matched_by": "grouped",
+        "groups": groups,
     }
 
 

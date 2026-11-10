@@ -4,12 +4,15 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+
+import numpy as np
 
 from .search import search
+from .vectors import VectorIndex
 
 
-def _load_benchmark(path: str | Path) -> list[dict[str, Any]]:
+def load_benchmark(path: str | Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     with Path(path).open(encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, 1):
@@ -29,9 +32,11 @@ def evaluate_file(
     conn: sqlite3.Connection,
     path: str | Path,
     ks: tuple[int, ...] = (5, 10),
+    vector_index: VectorIndex | None = None,
+    query_vectors: Mapping[str, np.ndarray] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Evaluate benchmark queries through the public search seam."""
-    entries = _load_benchmark(path)
+    entries = load_benchmark(path)
     max_k = max(ks, default=1)
     hit_counts = {k: 0 for k in ks}
     recall_totals = {k: 0.0 for k in ks}
@@ -39,8 +44,18 @@ def evaluate_file(
     reciprocal_ranks: list[float] = []
     failures: list[dict[str, Any]] = []
 
+
     for entry in entries:
-        result = search(conn, entry["query"], limit=max_k)
+        query_vector = query_vectors.get(entry["query"]) if query_vectors else None
+        if vector_index is not None and query_vector is None:
+            raise ValueError(f"missing query vector for benchmark id {entry['id']}")
+        result = search(
+            conn,
+            entry["query"],
+            limit=max_k,
+            vector_index=vector_index,
+            query_vector=query_vector,
+        )
         matched_by[result["matched_by"]] = matched_by.get(result["matched_by"], 0) + 1
         returned = [item["tag"] for item in result["results"]]
         expected = set(entry["expected"])

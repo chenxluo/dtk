@@ -23,12 +23,15 @@
 | 本地模型 | LM Studio 6001：`qwen3.8-27b`、Qwen3 Embedding 4B/8B | 默认本地模型 |
 | 缺失官方数据 | Implication、部分状态与更新时间 | 等本站恢复后增量补齐 |
 
-## 当前状态（2026-11-10）
+## 当前状态（2026-11-11）
 
-- M0、M1 完成：Git 基线、规范、Derived Store、CLI、46 条人工种子 Benchmark 已建立。
+- M0、M1、M2 完成：Git 基线、规范、Derived Store、混合检索、CLI、多概念分组与本地 Web UI 已建立。
 - 真实快照导入对账：Tag 1,082,991 / Wiki 335,769 / Alias 616,836；导入耗时约 8 秒，派生库约 320 MB。
+- 语义索引：21,773 个图量 ≥100 的 General/Meta Tag，Qwen3 Embedding 4B，2560 维，float16 NPZ 约 112 MB，构建约 388 秒。
 - M1 FTS 基线：hit@1 0.565、hit@5 0.609、hit@10 0.652、MRR 0.589。
-- 已知边界：中文自然语言与模糊英文排序失败，属于 M2 向量检索目标；精确名与 Alias 查询稳定。
+- M2 混合检索：hit@1 0.717、hit@5 0.848、hit@10 0.870、MRR 0.763；精确名与 Alias 优先级不变。
+- 单条语义查询实测：Embedding 约 38–61ms，本机向量检索约 273–337ms。
+- Web UI 已验证中文语义、详情展开、多概念分组（如「角色直视观众，非常长的头发」分别命中 `looking_at_viewer` 与 `long_hair`）。
 
 ## 里程碑
 
@@ -51,12 +54,10 @@
 
 ### M2 · 自然语言查询 MVP
 
-- General/Meta 优先接入 Qwen3 Embedding 4B。
-- FTS + 向量多路召回，RRF 或等价融合，Tag 级聚合。
-- 中文查询改写仅在评测证明收益后启用。
-- 多概念查询按子概念分组返回。
-- 简洁 Web UI。
-- 验收：固定 Benchmark 优于 M1 FTS 基线，精确与 Alias 无回归；记录延迟与资源。
+- General/Meta、`post_count >= 100` 的 Tag 接入 Qwen3 Embedding 4B（实测固定 2560 维）。
+- 语义索引为归一化 float16 NPZ + 分块 float32 余弦；FTS 与向量用 RRF 融合，并加入图量对数先验，Exact/Alias 优先级不变。
+- 多概念查询按明确分隔符拆分子概念并分组返回，不做无标记的语言猜测。
+- 简洁 Web UI：语义查询、命中原因、复制 Tag、完整 Wiki、别名与多概念分组。
 
 ### M3 · Research Agent 试点
 

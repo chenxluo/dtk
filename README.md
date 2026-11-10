@@ -1,24 +1,32 @@
 # Danbooru Tag Knowledge (DTK)
 
-以 Danbooru Tag 实体为中心的离线知识库与检索服务。M1 提供只读导入、精确名、Alias 与 FTS 查询、CLI 和检索评测。
+以 Danbooru Tag 实体为中心的离线知识库与检索服务。当前提供只读导入、精确名、Alias、FTS 与 Qwen3 向量混合检索、多概念分组、CLI、本地 Web UI 和检索评测。
 
 ## 快速开始
 
-Python 3.10+，M1 无第三方运行时依赖。
+Python 3.10+；语义检索需要 NumPy 与本地 LM Studio Embedding 服务。
 
 ```powershell
 # 1. 从只读 Source Snapshot 构建 Derived Store
 $env:DTK_SOURCE_DB = "G:/标注任务/metadata/core_data_new_v3.db"
 python -m dtk import
 
-# 2. 查询
+# 2. 为图量 >=100 的 General/Meta Tag 构建语义向量索引
+python -m dtk embed
+
+# 3. 查询；存在向量索引时自动使用 FTS + Vector RRF 混合检索
 python -m dtk search "Looking At Viewer"
-python -m dtk search "角色直视观众" --limit 5
+python -m dtk search "角色直视观众，非常长的头发" --limit 5
+python -m dtk search "角色直视观众" --no-vectors
 python -m dtk get looking_at_viewer
 python -m dtk info
 
-# 3. 检索评测
+# 4. 启动本地人类查询界面
+python -m dtk serve --port 8765
+
+# 5. 检索评测；--no-vectors 可复跑 M1 FTS 基线
 python -m dtk eval eval/benchmark.jsonl --k 1,5,10
+python -m dtk eval eval/benchmark.jsonl --k 1,5,10 --no-vectors
 ```
 
 Derived Store 默认写入 `data/dtk.db`，可用 `--db` 或 `DTK_DB` 覆盖。`data/` 不入 Git，Derived Store 可随时删除重建。
