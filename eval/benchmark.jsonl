@@ -1,0 +1,46 @@
+{"id": "exact-viewer", "query": "looking_at_viewer", "expected": ["looking_at_viewer"], "category": "exact"}
+{"id": "exact-viewer-space-case", "query": "Looking At Viewer", "expected": ["looking_at_viewer"], "category": "exact"}
+{"id": "en-viewer-direct-gaze", "query": "character looking directly at the viewer", "expected": ["looking_at_viewer"], "category": "semantic_en"}
+{"id": "zh-viewer-direct-gaze", "query": "角色直视观众", "expected": ["looking_at_viewer"], "category": "semantic_zh"}
+{"id": "exact-long-hair", "query": "long_hair", "expected": ["long_hair"], "category": "exact"}
+{"id": "en-long-hair", "query": "hair extending past the shoulders", "expected": ["long_hair"], "category": "semantic_en"}
+{"id": "zh-very-long-hair", "query": "非常长的头发", "expected": ["long_hair"], "category": "semantic_zh"}
+{"id": "exact-thighhighs", "query": "thighhighs", "expected": ["thighhighs"], "category": "exact"}
+{"id": "en-white-thighhighs", "query": "white thigh high stockings", "expected": ["white_thighhighs"], "category": "semantic_en"}
+{"id": "exact-twintails", "query": "twintails", "expected": ["twintails"], "category": "exact"}
+{"id": "zh-twintails", "query": "双马尾", "expected": ["twintails"], "category": "semantic_zh"}
+{"id": "exact-ahoge", "query": "ahoge", "expected": ["ahoge"], "category": "exact"}
+{"id": "en-ahoge", "query": "single strand of hair sticking up", "expected": ["ahoge"], "category": "semantic_en"}
+{"id": "exact-cat-ears", "query": "cat_ears", "expected": ["cat_ears"], "category": "exact"}
+{"id": "en-cat-ears", "query": "cat like ears on a character", "expected": ["cat_ears", "animal_ears"], "category": "semantic_en"}
+{"id": "exact-school-uniform", "query": "school_uniform", "expected": ["school_uniform"], "category": "exact"}
+{"id": "en-school-uniform", "query": "wearing a school uniform", "expected": ["school_uniform"], "category": "semantic_en"}
+{"id": "exact-wind", "query": "wind", "expected": ["wind"], "category": "exact"}
+{"id": "en-wind-lift", "query": "hair and clothes lifted by wind", "expected": ["wind_lift", "wind"], "category": "semantic_en"}
+{"id": "exact-from-below", "query": "from_below", "expected": ["from_below"], "category": "exact"}
+{"id": "en-from-below", "query": "camera looking up at the character", "expected": ["from_below"], "category": "semantic_en"}
+{"id": "exact-dutch-angle", "query": "dutch_angle", "expected": ["dutch_angle"], "category": "exact"}
+{"id": "en-dutch-angle", "query": "tilted camera angle", "expected": ["dutch_angle"], "category": "semantic_en"}
+{"id": "exact-closed-eyes", "query": "closed_eyes", "expected": ["closed_eyes"], "category": "exact"}
+{"id": "zh-closed-eyes", "query": "闭着眼睛", "expected": ["closed_eyes"], "category": "semantic_zh"}
+{"id": "exact-smile", "query": "smile", "expected": ["smile"], "category": "exact"}
+{"id": "zh-smile", "query": "微笑", "expected": ["smile"], "category": "semantic_zh"}
+{"id": "exact-glasses", "query": "glasses", "expected": ["glasses"], "category": "exact"}
+{"id": "zh-glasses", "query": "戴眼镜", "expected": ["glasses"], "category": "semantic_zh"}
+{"id": "exact-hakama", "query": "hakama", "expected": ["hakama"], "category": "exact"}
+{"id": "en-hakama", "query": "traditional japanese wide trouser skirt", "expected": ["hakama"], "category": "semantic_en"}
+{"id": "exact-kimono", "query": "kimono", "expected": ["kimono"], "category": "exact"}
+{"id": "zh-kimono", "query": "和服", "expected": ["kimono"], "category": "semantic_zh"}
+{"id": "exact-pantyhose", "query": "pantyhose", "expected": ["pantyhose"], "category": "exact"}
+{"id": "zh-black-pantyhose", "query": "黑色连裤袜", "expected": ["black_pantyhose"], "category": "semantic_zh"}
+{"id": "exact-one-girl", "query": "1girl", "expected": ["1girl"], "category": "exact"}
+{"id": "exact-two-girls", "query": "2girls", "expected": ["2girls"], "category": "exact"}
+{"id": "exact-crossed-arms", "query": "crossed_arms", "expected": ["crossed_arms"], "category": "exact"}
+{"id": "en-crossed-arms", "query": "arms crossed in front of body", "expected": ["crossed_arms"], "category": "semantic_en"}
+{"id": "exact-looking-back", "query": "looking_back", "expected": ["looking_back"], "category": "exact"}
+{"id": "en-looking-back", "query": "character turning around to look behind", "expected": ["looking_back"], "category": "semantic_en"}
+{"id": "alias-zh-heisei-23", "query": "平成23年", "expected": ["2011"], "category": "alias"}
+{"id": "exact-upper-body", "query": "upper_body", "expected": ["upper_body"], "category": "exact"}
+{"id": "zh-upper-body", "query": "上半身构图", "expected": ["upper_body"], "category": "semantic_zh"}
+{"id": "exact-profile", "query": "profile", "expected": ["profile"], "category": "exact"}
+{"id": "en-profile-view", "query": "side view of the face", "expected": ["profile"], "category": "semantic_en"}
