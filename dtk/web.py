@@ -8,8 +8,10 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .search import get_tag, search, search_grouped, split_concepts
+from .intent import IntentClassifier
+from .research.llm import ResearchLLMClient
 from .store import open_db
-from .vectors import EmbeddingClient, VectorIndex
+from .vectors import EmbeddingClient, VectorIndex, default_lm_base_url
 
 _INDEX_PAGE = Path(__file__).resolve().parents[1] / "web" / "index.html"
 
@@ -68,6 +70,7 @@ class _Handler(BaseHTTPRequestHandler):
                         limit=limit,
                         vector_index=vector_index,
                         research_index=research_index,
+                        intent_parser=self.server.intent_parser,
                         query_vector=query_vector,
                     )
                 else:
@@ -77,6 +80,7 @@ class _Handler(BaseHTTPRequestHandler):
                         limit=limit,
                         vector_index=vector_index,
                         research_index=research_index,
+                        intent_parser=self.server.intent_parser,
                         query_vectors=query_vectors,
                     )
             finally:
@@ -131,12 +135,14 @@ class DTKWebServer(ThreadingHTTPServer):
         vector_index: VectorIndex | None,
         research_index: VectorIndex | None,
         embedding_client: EmbeddingClient,
+        intent_parser: IntentClassifier | None,
     ) -> None:
         super().__init__(address, _Handler)
         self.db_path = db_path
         self.vector_index = vector_index
         self.research_index = research_index
         self.embedding_client = embedding_client
+        self.intent_parser = intent_parser
 
     def health(self) -> dict[str, Any]:
         return {
@@ -160,6 +166,8 @@ def create_server(
     vectors_path: str | Path | None = None,
     research_vectors_path: str | Path | None = None,
     embedding_model: str | None = None,
+    intent: bool = False,
+    intent_model: str | None = None,
     lm_base_url: str | None = None,
 ) -> DTKWebServer:
     """Create a read-only local web server; caller owns serve_forever lifecycle."""
@@ -179,10 +187,21 @@ def create_server(
         if research_vector_path.is_file():
             research_index = VectorIndex.load(research_vector_path)
 
+    intent_parser = None
+    if intent:
+        intent_parser = IntentClassifier(
+            ResearchLLMClient(
+                lm_base_url or default_lm_base_url(),
+                intent_model or "qwen3.8-27b",
+                cache_dir="cache/intent",
+            )
+        )
+
     return DTKWebServer(
         (host, port),
         database,
         vector_index,
         research_index,
         EmbeddingClient(lm_base_url, embedding_model),
+        intent_parser,
     )

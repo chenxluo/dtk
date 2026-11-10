@@ -24,9 +24,10 @@ python -m dtk info
 # 4. 启动本地人类查询界面
 python -m dtk serve --port 8765
 
-# 5. 检索评测；--no-vectors 可复跑 M1 FTS 基线
+# 5. 检索评测；--no-vectors 可复跑 M1 FTS 基线，--intent 可评估无意义查询拦截
 python -m dtk eval eval/benchmark.jsonl --k 1,5,10
 python -m dtk eval eval/benchmark.jsonl --k 1,5,10 --no-vectors
+python -m dtk eval eval/benchmark.jsonl --k 1,5,10 --intent
 
 # 6. 研究缺 Wiki 的高用量 General Tag（输出 Candidate，不自动入索引）
 python -m dtk research --types general --limit 10 --dry-run

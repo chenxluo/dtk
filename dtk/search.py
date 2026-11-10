@@ -100,6 +100,7 @@ def search(
     vector_index: VectorIndex | None = None,
     query_vector: np.ndarray | None = None,
     research_index: VectorIndex | None = None,
+    intent_parser: Any | None = None,
 ) -> dict[str, Any]:
     """Resolve exact names, aliases, and semantic text to Canonical Tags."""
     query = query.strip()
@@ -156,6 +157,9 @@ def search(
                 for rank, row in enumerate(alias_rows, 1)
             ],
         }
+
+    if intent_parser is not None and intent_parser.classify(query) == "no_match":
+        return {"query": query, "matched_by": "no_match", "intent": "no_match", "results": []}
 
     candidate_limit = max(limit * 10, 100)
     expression = _fts_expression(query)
@@ -247,6 +251,7 @@ def search_grouped(
     vector_index: VectorIndex | None = None,
     query_vectors: Mapping[str, np.ndarray] | None = None,
     research_index: VectorIndex | None = None,
+    intent_parser: Any | None = None,
 ) -> dict[str, Any]:
     """Search explicitly separated concepts independently and preserve grouping."""
     concepts = split_concepts(query)
@@ -257,6 +262,7 @@ def search_grouped(
             limit=limit,
             vector_index=vector_index,
             research_index=research_index,
+            intent_parser=intent_parser,
             query_vector=query_vectors.get(concept) if query_vectors else None,
         )
         for concept in concepts

@@ -187,6 +187,45 @@ class ImportAndSearchTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["tag"], "long_hair")
         self.assertNotIn("looking_at_viewer", [item["tag"] for item in result["results"]])
 
+    def test_optional_intent_gate_rejects_nonvisual_query(self) -> None:
+        class NoVisualIntent:
+            def classify(self, query):
+                return "no_match"
+
+        with self.derived_store() as conn:
+            rejected = search(conn, "zzqq_vorpal_nonexistent_tag", intent_parser=NoVisualIntent())
+            exact = search(conn, "looking_at_viewer", intent_parser=NoVisualIntent())
+
+        self.assertEqual(rejected["matched_by"], "no_match")
+        self.assertEqual(rejected["results"], [])
+        self.assertEqual(exact["matched_by"], "exact_name")
+        self.assertEqual(exact["results"][0]["tag"], "looking_at_viewer")
+
+    def test_no_match_benchmark_is_scored_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            benchmark = Path(tmp) / "benchmark.jsonl"
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "id": "nonsense-001",
+                        "query": "zzqq_vorpal_nonexistent_tag",
+                        "expected": [],
+                        "category": "no_match",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.derived_store() as conn:
+                metrics, failures = evaluate_file(conn, benchmark, ks=(1, 5))
+
+        self.assertEqual(metrics["queries"], 1)
+        self.assertEqual(metrics["retrieval_queries"], 0)
+        self.assertEqual(metrics["no_match_total"], 1)
+        self.assertEqual(metrics["no_match_correct"], 1)
+        self.assertEqual(metrics["no_match_accuracy"], 1.0)
+        self.assertEqual(failures, [])
+
     def test_benchmark_evaluation_reports_hits_and_failures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             benchmark = Path(tmp) / "benchmark.jsonl"

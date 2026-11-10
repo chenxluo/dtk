@@ -45,3 +45,4 @@
 {"id": "exact-profile", "query": "profile", "expected": ["profile"], "category": "exact"}
 {"id": "en-profile-view", "query": "side view of the face", "expected": ["profile"], "category": "semantic_en"}
 {"id": "research-pre-wink-open-smile", "query": "单眼眨眼并且张嘴笑", "expected": [";d"], "category": "research_pre"}
+{"id": "no-match-unknown-glyph", "query": "zzqq_vorpal_nonexistent_tag", "expected": [], "category": "no_match"}

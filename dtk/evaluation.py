@@ -22,8 +22,8 @@ def load_benchmark(path: str | Path) -> list[dict[str, Any]]:
             missing = {"id", "query", "expected"} - entry.keys()
             if missing:
                 raise ValueError(f"{path}:{line_number} missing {sorted(missing)}")
-            if not isinstance(entry["expected"], list) or not entry["expected"]:
-                raise ValueError(f"{path}:{line_number} expected must be a non-empty list")
+            if not isinstance(entry["expected"], list):
+                raise ValueError(f"{path}:{line_number} expected must be a list")
             entries.append(entry)
     return entries
 
@@ -35,6 +35,7 @@ def evaluate_file(
     vector_index: VectorIndex | None = None,
     research_index: VectorIndex | None = None,
     query_vectors: Mapping[str, np.ndarray] | None = None,
+    intent_parser: Any | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Evaluate benchmark queries through the public search seam."""
     entries = load_benchmark(path)
@@ -45,10 +46,14 @@ def evaluate_file(
     reciprocal_ranks: list[float] = []
     failures: list[dict[str, Any]] = []
 
+    retrieval_count = 0
+    no_match_total = 0
+    no_match_correct = 0
+
 
     for entry in entries:
         query_vector = query_vectors.get(entry["query"]) if query_vectors else None
-        if vector_index is not None and query_vector is None:
+        if (vector_index is not None or research_index is not None) and query_vector is None:
             raise ValueError(f"missing query vector for benchmark id {entry['id']}")
         result = search(
             conn,
@@ -56,11 +61,30 @@ def evaluate_file(
             limit=max_k,
             vector_index=vector_index,
             research_index=research_index,
+            intent_parser=intent_parser,
             query_vector=query_vector,
         )
         matched_by[result["matched_by"]] = matched_by.get(result["matched_by"], 0) + 1
         returned = [item["tag"] for item in result["results"]]
         expected = set(entry["expected"])
+
+        if not expected:
+            no_match_total += 1
+            if not returned:
+                no_match_correct += 1
+            else:
+                failures.append(
+                    {
+                        "id": entry["id"],
+                        "query": entry["query"],
+                        "expected": [],
+                        "returned": returned,
+                        "matched_by": result["matched_by"],
+                    }
+                )
+            continue
+
+        retrieval_count += 1
         first_rank = next(
             (rank for rank, tag in enumerate(returned, 1) if tag in expected), None
         )
@@ -83,13 +107,16 @@ def evaluate_file(
                 }
             )
 
-    count = len(entries)
     metrics: dict[str, Any] = {
-        "queries": count,
-        "mrr": sum(reciprocal_ranks) / count if count else 0.0,
+        "queries": len(entries),
+        "retrieval_queries": retrieval_count,
+        "no_match_total": no_match_total,
+        "no_match_correct": no_match_correct,
+        "no_match_accuracy": no_match_correct / no_match_total if no_match_total else 1.0,
+        "mrr": sum(reciprocal_ranks) / retrieval_count if retrieval_count else 0.0,
         "matched_by": matched_by,
     }
     for k in ks:
-        metrics[f"hit@{k}"] = hit_counts[k] / count if count else 0.0
-        metrics[f"recall@{k}"] = recall_totals[k] / count if count else 0.0
+        metrics[f"hit@{k}"] = hit_counts[k] / retrieval_count if retrieval_count else 0.0
+        metrics[f"recall@{k}"] = recall_totals[k] / retrieval_count if retrieval_count else 0.0
     return metrics, failures

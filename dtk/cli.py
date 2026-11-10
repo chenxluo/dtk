@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .evaluation import evaluate_file, load_benchmark
+from .intent import IntentClassifier
 from .search import get_tag, search, search_grouped, split_concepts
 from .store import build_database, database_info, open_db
 from .research.audit import audit_research
@@ -135,6 +136,10 @@ def _add_vector_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--embedding-model", default=default_embedding_model())
     parser.add_argument("--endpoint", default=default_lm_base_url())
+    parser.add_argument(
+        "--intent", action="store_true", help="use local LLM to reject non-visual queries"
+    )
+    parser.add_argument("--intent-model", default=_default_research_model())
 
 
 def _vector_state(
@@ -173,6 +178,18 @@ def _vector_state(
     unique_queries = list(dict.fromkeys(queries))
     vectors = client.embed(unique_queries)
     return official_index, research_index, dict(zip(unique_queries, vectors))
+
+
+def _intent_state(args: argparse.Namespace) -> IntentClassifier | None:
+    if not args.intent:
+        return None
+    return IntentClassifier(
+        ResearchLLMClient(
+            args.endpoint,
+            args.intent_model,
+            cache_dir="cache/intent",
+        )
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -455,6 +472,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 vectors_path=args.vectors or None,
                 research_vectors_path=args.research_vectors,
                 embedding_model=args.embedding_model,
+                intent=args.intent,
+                intent_model=args.intent_model,
                 lm_base_url=args.endpoint,
             )
             print(
@@ -473,6 +492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "search":
             concepts = split_concepts(args.query)
             vector_index, research_index, vector_map = _vector_state(args, concepts)
+            intent_parser = _intent_state(args)
             conn = open_db(args.db)
             try:
                 if len(concepts) == 1:
@@ -482,6 +502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         limit=args.limit,
                         vector_index=vector_index,
                         research_index=research_index,
+                        intent_parser=intent_parser,
                         query_vector=vector_map[concepts[0]] if vector_map else None,
                     )
                 else:
@@ -491,6 +512,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         limit=args.limit,
                         vector_index=vector_index,
                         research_index=research_index,
+                        intent_parser=intent_parser,
                         query_vectors=vector_map,
                     )
             finally:
@@ -522,6 +544,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             vector_index, research_index, vector_map = _vector_state(
                 args, [entry["query"] for entry in entries]
             )
+            intent_parser = _intent_state(args)
             conn = open_db(args.db)
             try:
                 metrics, failures = evaluate_file(
@@ -530,6 +553,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ks=ks,
                     vector_index=vector_index,
                     research_index=research_index,
+                    intent_parser=intent_parser,
                     query_vectors=vector_map,
                 )
             finally:
