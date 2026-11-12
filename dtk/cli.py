@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -12,8 +13,7 @@ from .evaluation import evaluate_file, load_benchmark
 from .intent import IntentClassifier
 from .mcp import StdioMCPServer, run_stdio
 from .relations import cooccurring_tags
-from .search import get_tag, search, search_grouped, split_concepts
-from .store import build_database, database_info, open_db
+from .store import build_database, database_info, open_db, rebuild_search_index
 from .research.audit import audit_research
 from .research.engine import run_research
 from .research.fetch import Fetcher
@@ -27,7 +27,8 @@ from .research.searx import SearXNGClient
 from .research.publish import load_research_records, publish_research
 from .research.tag_task import TagResearchTask
 from .research.parallel import ParallelMCPSearchClient, ParallelSearchClient, load_parallel_key
-from .upstream import DEFAULT_BASE_URL as UPSTREAM_BASE_URL, import_implications, upstream_status
+from .translations import FFDKJ_URL, fetch_ffdkj_sqlite, import_translations
+from .upstream import DEFAULT_BASE_URL as UPSTREAM_BASE_URL, import_implications, import_wikis, upstream_status
 from .vectors import (
     EmbeddingClient,
     VectorIndex,
@@ -383,6 +384,32 @@ def build_parser() -> argparse.ArgumentParser:
     implications_parser.add_argument("--delay", type=float, default=0.7)
     implications_parser.add_argument("--json", action="store_true")
 
+    wikis_parser = subparsers.add_parser(
+        "import-wikis", help="fill snapshot Wiki gaps from the official Wiki API"
+    )
+    _add_db_argument(wikis_parser)
+    wikis_parser.add_argument("--base-url", default=UPSTREAM_BASE_URL)
+    wikis_parser.add_argument("--min-count", type=int, default=100)
+    wikis_parser.add_argument("--artist-min-count", type=int, default=1000)
+    wikis_parser.add_argument("--limit", type=int, default=None)
+    wikis_parser.add_argument("--workers", type=int, default=6)
+    wikis_parser.add_argument("--json", action="store_true")
+
+    translations_parser = subparsers.add_parser(
+        "import-translations", help="import community Chinese tag-name translations"
+    )
+    _add_db_argument(translations_parser)
+    translations_parser.add_argument(
+        "--file", default=str(Path("cache/upstream/ffdkj_tag.sqlite"))
+    )
+    translations_parser.add_argument("--json", action="store_true")
+
+    index_parser = subparsers.add_parser(
+        "rebuild-index", help="rebuild the FTS index from snapshot + additive data"
+    )
+    _add_db_argument(index_parser)
+    index_parser.add_argument("--json", action="store_true")
+
     upstream_parser = subparsers.add_parser(
         "check-upstream", help="compare live Danbooru with the local Source Snapshot"
     )
@@ -598,6 +625,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             return 0
 
+        if args.command == "import-wikis":
+            started = time.monotonic()
+
+            def _wiki_progress(done: int, total: int) -> None:
+                elapsed = time.monotonic() - started
+                rate = done / elapsed if elapsed else 0.0
+                remaining = (total - done) / rate if rate else 0.0
+                print(
+                    f"[wikis] {done}/{total} ({rate:.1f}/s, ~{remaining/60:.0f}m left)",
+                    flush=True,
+                )
+
+            result = import_wikis(
+                args.db,
+                base_url=args.base_url,
+                min_count=args.min_count,
+                artist_min_count=args.artist_min_count,
+                limit=args.limit,
+                workers=args.workers,
+                progress=_wiki_progress,
+            )
+            if args.json:
+                _print_json(result)
+            else:
+                print(
+                    f"checked {result['candidates']} tags: "
+                    f"{result['hits']} wikis, {result['misses']} misses"
+                )
+            return 0
+
         if args.command == "check-upstream":
             conn = open_db(args.db)
             try:
@@ -609,6 +666,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 for key, value in result.items():
                     print(f"{key}: {value}")
+            return 0
+
+        if args.command == "import-translations":
+            source_file = Path(args.file)
+            if not source_file.is_file():
+                print(f"downloading {FFDKJ_URL} -> {source_file}", flush=True)
+                fetch_ffdkj_sqlite(source_file)
+            result = import_translations(args.db, source_file)
+            if args.json:
+                _print_json(result)
+            else:
+                print(
+                    f"matched {result['matched']}/{result['source_rows']} rows "
+                    f"from {result['label']}"
+                )
+            return 0
+
+        if args.command == "rebuild-index":
+            result = rebuild_search_index(args.db)
+            if args.json:
+                _print_json(result)
+            else:
+                print(f"rebuilt FTS index: {result['fts_rows']} rows")
             return 0
 
         if args.command == "info":

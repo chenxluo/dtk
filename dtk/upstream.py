@@ -6,6 +6,7 @@ Derived Store table. Official snapshot Wiki columns are never touched.
 from __future__ import annotations
 
 import json
+import concurrent.futures
 import sqlite3
 import time
 import urllib.error
@@ -28,7 +29,18 @@ CREATE TABLE IF NOT EXISTS tag_implications (
 );
 CREATE INDEX IF NOT EXISTS idx_implications_antecedent ON tag_implications(antecedent);
 CREATE INDEX IF NOT EXISTS idx_implications_consequent ON tag_implications(consequent);
+
+CREATE TABLE IF NOT EXISTS upstream_wikis (
+    tag_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT,
+    other_names_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT,
+    fetched_at TEXT NOT NULL
+);
 """
+
+UPSTREAM_SCHEMA = _SCHEMA
 
 
 def _fetch_json(url: str, timeout: float = 30.0) -> Any:
@@ -138,6 +150,137 @@ def import_implications(
         )
         connection.commit()
         return {"imported": imported, "pages": pages, "status": status}
+    finally:
+        connection.close()
+
+
+def _wiki_candidates(
+    connection: sqlite3.Connection,
+    *,
+    min_count: int,
+    artist_min_count: int,
+    limit: int | None,
+) -> list[tuple[int, str]]:
+    rows = connection.execute(
+        """
+        SELECT t.id, t.name
+        FROM tags t
+        WHERE (
+                (t.type <> 'artist' AND t.post_count >= :min_count)
+                OR (t.type = 'artist' AND t.post_count >= :artist_min_count)
+            )
+            AND (t.wiki IS NULL OR trim(t.wiki) = '')
+            AND t.id NOT IN (SELECT tag_id FROM upstream_wikis)
+        ORDER BY t.post_count DESC, t.id
+        """,
+        {"min_count": min_count, "artist_min_count": artist_min_count},
+    ).fetchall()
+    if limit:
+        rows = rows[:limit]
+    return [(int(row[0]), str(row[1])) for row in rows]
+
+
+def import_wikis(
+    db_path: str | Path,
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    min_count: int = 100,
+    artist_min_count: int = 1000,
+    limit: int | None = None,
+    workers: int = 6,
+    timeout: float = 30.0,
+    fetch_json: Callable[..., Any] = _fetch_json,
+    progress: Callable[[int, int], None] | None = None,
+) -> dict[str, Any]:
+    """Fill snapshot Wiki gaps from the official Wiki API (additive, resumable).
+
+    Candidates are tags the Derived Store built without a Wiki body. Both hits
+    (body + other_names) and confirmed misses (body NULL) are recorded so
+    re-runs resume instead of re-querying. Snapshot Wiki columns stay untouched.
+    """
+    if workers <= 0:
+        raise ValueError("workers must be positive")
+    database = Path(db_path).resolve()
+    if not database.is_file():
+        raise FileNotFoundError(f"derived store not found: {database}")
+
+    connection = sqlite3.connect(database)
+    try:
+        connection.executescript(_SCHEMA)
+        candidates = _wiki_candidates(
+            connection,
+            min_count=min_count,
+            artist_min_count=artist_min_count,
+            limit=limit,
+        )
+        total = len(candidates)
+        hits = misses = 0
+        fetched_at = datetime.now(timezone.utc).isoformat()
+
+        def fetch_one(item: tuple[int, str]) -> tuple[int, str, dict[str, Any] | None]:
+            tag_id, name = item
+            url = (
+                f"{base_url}/wiki_pages.json?limit=5&search[title]="
+                f"{urllib.parse.quote(name, safe='')}"
+            )
+            pages = fetch_json(url, timeout=timeout)
+            for page in pages if isinstance(pages, list) else []:
+                if str(page.get("title") or "").lower() == name.lower():
+                    return tag_id, name, page
+            return tag_id, name, None
+
+        done = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(fetch_one, item) for item in candidates]
+            for future in concurrent.futures.as_completed(futures):
+                tag_id, name, page = future.result()
+                if page is None:
+                    misses += 1
+                    connection.execute(
+                        "INSERT OR REPLACE INTO upstream_wikis"
+                        "(tag_id, title, body, other_names_json, updated_at, fetched_at)"
+                        " VALUES (?, ?, NULL, '[]', NULL, ?)",
+                        (tag_id, name, fetched_at),
+                    )
+                else:
+                    hits += 1
+                    connection.execute(
+                        """
+                        INSERT OR REPLACE INTO upstream_wikis(
+                            tag_id, title, body, other_names_json, updated_at, fetched_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            tag_id,
+                            page.get("title") or name,
+                            page.get("body") or "",
+                            json.dumps(page.get("other_names") or [], ensure_ascii=False),
+                            page.get("updated_at"),
+                            fetched_at,
+                        ),
+                    )
+                done += 1
+                if done % 50 == 0 or done == total:
+                    connection.commit()
+                    if progress:
+                        progress(done, total)
+
+        _set_meta(
+            connection,
+            {
+                "upstream_wikis_source": f"{base_url}/wiki_pages.json",
+                "upstream_wikis_fetched_at": fetched_at,
+                "upstream_wikis_count": connection.execute(
+                    "SELECT COUNT(*) FROM upstream_wikis WHERE body IS NOT NULL"
+                ).fetchone()[0],
+            },
+        )
+        connection.commit()
+        return {
+            "candidates": total,
+            "hits": hits,
+            "misses": misses,
+        }
     finally:
         connection.close()
 

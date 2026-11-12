@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+from .translations import TRANSLATIONS_SCHEMA
+from .upstream import UPSTREAM_SCHEMA
+
+SCHEMA_VERSION = 2
 _REQUIRED_SOURCE_TABLES = {"tags", "tag_types", "tag_wiki", "tag_aliases", "main_table"}
 
 _SCHEMA = """
@@ -36,13 +39,65 @@ CREATE TABLE aliases (
 
 CREATE INDEX idx_aliases_lookup ON aliases(lookup_key, tag_id);
 CREATE INDEX idx_aliases_tag ON aliases(tag_id);
+"""
 
+_FTS_SCHEMA = """
 CREATE VIRTUAL TABLE tag_fts USING fts5(
     name,
+    cn_name,
     aliases,
+    other_names,
     wiki,
     tag_id UNINDEXED
 );
+"""
+
+_TAG_DETAILS_VIEW = """
+CREATE VIEW IF NOT EXISTS tag_details AS
+SELECT
+    t.id,
+    t.name,
+    t.lookup_key,
+    t.type,
+    t.post_count,
+    coalesce(u.body, t.wiki) AS wiki,
+    CASE
+        WHEN u.body IS NOT NULL THEN 'upstream'
+        WHEN t.wiki IS NOT NULL AND trim(t.wiki) <> '' THEN 'snapshot'
+    END AS wiki_source,
+    tr.cn_name AS cn_name,
+    u.other_names_json AS other_names_json
+FROM tags t
+LEFT JOIN upstream_wikis u ON u.tag_id = t.id
+LEFT JOIN tag_translations tr ON tr.tag_id = t.id;
+"""
+
+_ADDITIVE_SCHEMA = UPSTREAM_SCHEMA + TRANSLATIONS_SCHEMA + _TAG_DETAILS_VIEW
+
+_FTS_INSERT = """
+INSERT INTO tag_fts(tag_id, name, cn_name, aliases, other_names, wiki)
+WITH alias_text(tag_id, aliases) AS (
+    SELECT tag_id, group_concat(replace(alias, '_', ' '), char(10))
+    FROM aliases
+    GROUP BY tag_id
+),
+other_text(tag_id, names) AS (
+    SELECT u.tag_id, group_concat(replace(j.value, '_', ' '), ' ')
+    FROM upstream_wikis u, json_each(u.other_names_json) j
+    GROUP BY u.tag_id
+)
+SELECT
+    t.id,
+    replace(t.name, '_', ' '),
+    coalesce(tr.cn_name, ''),
+    coalesce(a.aliases, ''),
+    coalesce(o.names, ''),
+    coalesce(u.body, t.wiki, '')
+FROM tags t
+LEFT JOIN alias_text a ON a.tag_id = t.id
+LEFT JOIN other_text o ON o.tag_id = t.id
+LEFT JOIN upstream_wikis u ON u.tag_id = t.id
+LEFT JOIN tag_translations tr ON tr.tag_id = t.id
 """
 
 
@@ -53,7 +108,10 @@ def _uri(path: Path, readonly: bool = False) -> str:
 
 def _set_meta(conn: sqlite3.Connection, values: dict[str, Any]) -> None:
     conn.executemany(
-        "INSERT INTO meta(key, value) VALUES (?, ?)",
+        """
+        INSERT INTO meta(key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
         [(key, str(value)) for key, value in values.items()],
     )
 
@@ -96,7 +154,7 @@ def build_database(source: str | Path, destination: str | Path) -> dict[str, Any
         if missing:
             raise ValueError(f"source snapshot missing tables: {sorted(missing)}")
 
-        conn.executescript(_SCHEMA)
+        conn.executescript(_SCHEMA + _ADDITIVE_SCHEMA + _FTS_SCHEMA)
         conn.execute("BEGIN")
 
         conn.execute(
@@ -122,23 +180,7 @@ def build_database(source: str | Path, destination: str | Path) -> dict[str, Any
             JOIN tags t ON t.id = a.tag_id
             """
         )
-        conn.execute(
-            """
-            INSERT INTO tag_fts(tag_id, name, aliases, wiki)
-            WITH alias_text(tag_id, aliases) AS (
-                SELECT tag_id, group_concat(replace(alias, '_', ' '), char(10))
-                FROM aliases
-                GROUP BY tag_id
-            )
-            SELECT
-                t.id,
-                replace(t.name, '_', ' '),
-                coalesce(a.aliases, ''),
-                coalesce(t.wiki, '')
-            FROM tags t
-            LEFT JOIN alias_text a ON a.tag_id = t.id
-            """
-        )
+        conn.execute(_FTS_INSERT)
 
         counts = {
             "source_tag_rows": conn.execute("SELECT COUNT(*) FROM src.tags").fetchone()[0],
@@ -214,6 +256,34 @@ def open_db(path: str | Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only=ON")
     return conn
+
+
+def rebuild_search_index(db_path: str | Path) -> dict[str, Any]:
+    """Recreate the FTS index from snapshot plus additive upstream/translation data.
+
+    Run after `import-wikis` / `import-translations` so full-text search sees
+    merged Wiki bodies, Chinese names, and official other-names.
+    """
+    database = Path(db_path).resolve()
+    if not database.is_file():
+        raise FileNotFoundError(f"derived store not found: {database}")
+    conn = sqlite3.connect(database)
+    try:
+        conn.executescript(_ADDITIVE_SCHEMA)
+        conn.execute("DROP TABLE IF EXISTS tag_fts")
+        conn.executescript(_FTS_SCHEMA)
+        conn.execute(_FTS_INSERT)
+        _set_meta(
+            conn,
+            {
+                "fts_index_built_at": datetime.now(timezone.utc).isoformat(),
+                "fts_row_count": conn.execute("SELECT COUNT(*) FROM tag_fts").fetchone()[0],
+            },
+        )
+        conn.commit()
+        return {"fts_rows": conn.execute("SELECT COUNT(*) FROM tag_fts").fetchone()[0]}
+    finally:
+        conn.close()
 
 
 def database_info(conn: sqlite3.Connection) -> dict[str, str]:

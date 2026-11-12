@@ -1,10 +1,10 @@
 """Read-only Tag lookup and retrieval."""
 from __future__ import annotations
 
+import json
 import math
 import re
 import sqlite3
-from typing import Any, Mapping
 
 import numpy as np
 
@@ -46,6 +46,7 @@ def _result(row: sqlite3.Row, matched_by: str, rank: int, **extra: Any) -> dict[
         "post_count": row["post_count"],
         "matched_by": matched_by,
         "rank": rank,
+        "cn_name": row["cn_name"] if "cn_name" in row.keys() else None,
         "wiki_excerpt": _excerpt(row["wiki"]),
     }
     result.update(extra)
@@ -55,6 +56,7 @@ def _result(row: sqlite3.Row, matched_by: str, rank: int, **extra: Any) -> dict[
 def _fts_rows(
     conn: sqlite3.Connection, expression: str, limit: int
 ) -> list[sqlite3.Row]:
+    # column weights: name/cn_name strongest, aliases/other_names medium, wiki weak
     return conn.execute(
         """
         SELECT
@@ -63,11 +65,12 @@ def _fts_rows(
             t.type,
             t.post_count,
             t.wiki,
-            bm25(tag_fts) AS bm25_score
+            t.cn_name,
+            bm25(tag_fts, 4.0, 4.0, 2.0, 2.0, 0.2) AS bm25_score
         FROM tag_fts
-        JOIN tags t ON t.id = tag_fts.tag_id
+        JOIN tag_details t ON t.id = tag_fts.tag_id
         WHERE tag_fts MATCH ?
-        ORDER BY bm25(tag_fts), t.post_count DESC, t.name
+        ORDER BY bm25_score, t.post_count DESC, t.name
         LIMIT ?
         """,
         (expression, limit),
@@ -80,8 +83,8 @@ def _tags_by_ids(conn: sqlite3.Connection, tag_ids: list[int]) -> dict[int, sqli
     placeholders = ",".join("?" for _ in tag_ids)
     rows = conn.execute(
         f"""
-        SELECT id, name, type, post_count, wiki
-        FROM tags
+        SELECT id, name, type, post_count, wiki, cn_name
+        FROM tag_details
         WHERE id IN ({placeholders})
         """,
         tag_ids,
@@ -112,8 +115,8 @@ def search(
     lookup_key = normalize_name(query)
     row = conn.execute(
         """
-        SELECT id, name, type, post_count, wiki
-        FROM tags
+        SELECT id, name, type, post_count, wiki, cn_name
+        FROM tag_details
         WHERE lookup_key = ?
         """,
         (lookup_key,),
@@ -133,12 +136,13 @@ def search(
             t.type,
             t.post_count,
             t.wiki,
+            t.cn_name,
             (
                 SELECT min(a.alias)
                 FROM aliases a
                 WHERE a.lookup_key = ? AND a.tag_id = t.id
             ) AS matched_alias
-        FROM tags t
+        FROM tag_details t
         WHERE EXISTS (
             SELECT 1 FROM aliases a
             WHERE a.lookup_key = ? AND a.tag_id = t.id
@@ -364,8 +368,8 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
     """Return one canonical Tag record, or None when it does not exist."""
     row = conn.execute(
         """
-        SELECT id, name, type, post_count, wiki
-        FROM tags
+        SELECT id, name, type, post_count, wiki, wiki_source, cn_name, other_names_json
+        FROM tag_details
         WHERE lookup_key = ?
         """,
         (normalize_name(name),),
@@ -374,12 +378,16 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         return None
 
     aliases = [
-        row["alias"]
-        for row in conn.execute(
+        item["alias"]
+        for item in conn.execute(
             "SELECT alias FROM aliases WHERE tag_id = ? ORDER BY alias",
             (row["id"],),
         )
     ]
+    try:
+        other_names = json.loads(row["other_names_json"] or "[]")
+    except (TypeError, ValueError):
+        other_names = []
     return {
         "tag": row["name"],
         "tag_id": row["id"],
@@ -387,7 +395,10 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         "post_count": row["post_count"],
         "wiki": row["wiki"] or "",
         "wiki_excerpt": _excerpt(row["wiki"]),
+        "wiki_source": row["wiki_source"],
+        "cn_name": row["cn_name"],
         "aliases": aliases,
+        "other_names": other_names,
         "research": _research_record(conn, row["id"]),
         "implications": _implication_record(conn, row["name"]),
     }

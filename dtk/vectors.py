@@ -162,10 +162,28 @@ class VectorIndex:
         return ranked
 
 
-def semantic_document(name: str, wiki: str | None, aliases: Sequence[str]) -> str:
+def _other_names(other_names_json: str | None) -> list[str]:
+    try:
+        values = json.loads(other_names_json or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(value) for value in values] if isinstance(values, list) else []
+
+
+def semantic_document(
+    name: str,
+    wiki: str | None,
+    aliases: Sequence[str],
+    *,
+    cn_name: str | None = None,
+    other_names: Sequence[str] = (),
+) -> str:
     """Build one retrieval document from official name, aliases, and Wiki."""
     parts = [name.replace("_", " ")]
     parts.extend(alias.replace("_", " ") for alias in aliases)
+    if cn_name:
+        parts.append(cn_name)
+    parts.extend(str(value).replace("_", " ") for value in other_names)
     if wiki:
         parts.append(wiki[:2000])
     return "\n".join(parts)
@@ -189,8 +207,8 @@ def build_vector_index(
     try:
         tag_rows = conn.execute(
             """
-            SELECT id, name, wiki
-            FROM tags
+            SELECT id, name, wiki, cn_name, other_names_json
+            FROM tag_details
             WHERE type IN ('general', 'meta') AND post_count >= ?
             ORDER BY id
             """,
@@ -215,7 +233,13 @@ def build_vector_index(
         conn.close()
 
     texts = [
-        semantic_document(row["name"], row["wiki"], aliases.get(row["id"], []))
+        semantic_document(
+            row["name"],
+            row["wiki"],
+            aliases.get(row["id"], []),
+            cn_name=row["cn_name"],
+            other_names=_other_names(row["other_names_json"]),
+        )
         for row in tag_rows
     ]
     vectors: list[np.ndarray] = []

@@ -50,6 +50,12 @@ python -m dtk mcp --db data/dtk.db
 
 # 11. 官方数据同步：导入 Danbooru 官方 Tag Implication（加性表，不改快照）
 python -m dtk import-implications
+# 补缺官方 Wiki（非 artist ≥100 帖 + artist ≥1k 帖，含 other_names 中/日别名；幂等可续跑）
+python -m dtk import-wikis --workers 8
+# 导入社区中文译名（ffdkj 表，MIT，~336k 条）
+python -m dtk import-translations
+# 增量导入后重建 FTS（合并 upstream wiki/cn_name/other_names）
+python -m dtk rebuild-index
 # 对比本站最新帖与本地快照的差距
 python -m dtk check-upstream
 
