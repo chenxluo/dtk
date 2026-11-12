@@ -16,6 +16,7 @@ from .relations import cooccurring_tags
 from .store import build_database, database_info, open_db, rebuild_search_index
 from .research.audit import audit_research
 from .enrich import enrich_tags
+from .research.engine import run_research
 from .research.fetch import Fetcher
 from .research.llm import ResearchLLMClient
 from .research.queue import (
