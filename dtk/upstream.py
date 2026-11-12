@@ -190,6 +190,7 @@ def import_wikis(
     workers: int = 6,
     request_delay: float = 1.0,
     timeout: float = 30.0,
+    fetch_json: Callable[..., Any] = _fetch_json,
     progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Fill snapshot Wiki gaps from the official Wiki API (additive, resumable).
