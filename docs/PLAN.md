@@ -44,6 +44,7 @@
 - 研究模型可切换到局域网 `qwen3.8-flash-next-unsloth-ud-iq4_xs-v31`（262,144 上下文，自签 HTTPS 经 `--insecure-tls` + `--key-file key/qwen3.8flash.txt` 接入）。
 - 新增免 key 的 Parallel MCP 搜索 provider（`--search-provider parallel-mcp`，走 `https://mcp.parallel.ai/mcp` 的 `web_search`，免费低限额）：实测首条命中即 Danbooru 官方 Wiki/论坛页，显著优于 SearXNG/Bing；不使用付费层级。配套修复 DNS 污染误杀（代理下域名校验放行）与 Chrome UA 反被 403 的问题后，3 个两轮 unknown 的标签一次烟测全部 completed，证据全部来自官方 Wiki。
 - 建库管线开工(ADR 0008):官方 Wiki 补缺同步(`import-wikis`,7,750 个候选:非 artist ≥100 帖 + artist ≥1k 帖)、ffdkj 中文译名导入(336k,MIT)、`rebuild-index` 合并 FTS、`enrich` LLM 增强层(联想说法/facets/中文定义)均已实现;检索文档与知识文档分离,`tag_details` 视图统一合并视图,wiki 合并优先级 upstream > 快照。
+- 建库管线首期执行完毕(2026-11-13):官方 Wiki 补缺 7,378 个(候选 7,750,95.2%,其余 372 个官方确认无 Wiki)、ffdkj 中文译名 329,760 个(60 条抽查全对)、flash 增强层 ≥10k 帖 2,584 个标签(0 失败)。FTS/向量/get_tag 全部吃到增强数据后,50 条基准:MRR 0.756→0.872,hit@5 0.851→0.915,hit@10 0.872→0.979,no_match 门控保持 1.0。
 - 研究提示词已加入二次元主题约束：ACG 语境优先、多义词取二次元义项、优先萌娘百科/pixiv 百科等来源（SearXNG 与 Parallel 共用）。
 
 ## 里程碑
