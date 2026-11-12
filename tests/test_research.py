@@ -160,6 +160,90 @@ class ResearchClientTests(unittest.TestCase):
             "https://e621.net/wiki_pages/oni_horns?page=2",
         )
 
+
+    def test_parallel_mcp_client_searches_without_key(self) -> None:
+        captured = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                payload = json.loads(self.rfile.read(length))
+                captured.append(payload)
+
+                def respond(body, session=None):
+                    data = f"data: {json.dumps(body)}\n\n".encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Content-Length", str(len(data)))
+                    if session:
+                        self.send_header("Mcp-Session-Id", session)
+                    self.end_headers()
+                    self.wfile.write(data)
+
+                if payload.get("method") == "initialize":
+                    respond(
+                        {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}},
+                        session="session-1",
+                    )
+                elif payload.get("method") == "tools/call":
+                    respond(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(
+                                            {
+                                                "results": [
+                                                    {
+                                                        "url": "https://danbooru.donmai.us/wiki_pages/x",
+                                                        "title": "X Wiki",
+                                                        "excerpts": ["ex1", "ex2"],
+                                                    }
+                                                ]
+                                            }
+                                        ),
+                                    }
+                                ]
+                            },
+                        }
+                    )
+                else:
+                    respond({"jsonrpc": "2.0", "result": {}})
+
+            def log_message(self, format, *args):
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            from dtk.research.parallel import ParallelMCPSearchClient
+
+            client = ParallelMCPSearchClient(
+                endpoint=f"http://127.0.0.1:{server.server_port}/mcp", qps=0
+            )
+            results = client.search("oni horns anime tag")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        self.assertEqual(results[0]["url"], "https://danbooru.donmai.us/wiki_pages/x")
+        self.assertEqual(results[0]["content"], "ex1\nex2")
+        self.assertEqual(client.session_id, "session-1")
+        methods = [payload.get("method") for payload in captured]
+        self.assertIn("initialize", methods)
+        self.assertIn("tools/call", methods)
+        call = next(p for p in captured if p.get("method") == "tools/call")
+        self.assertEqual(call["params"]["name"], "web_search")
+        self.assertIn("Danbooru", call["params"]["arguments"]["objective"])
+        self.assertEqual(
+            call["params"]["arguments"]["search_queries"], ["oni horns anime tag"]
+        )
+
     def test_llm_client_retries_rate_limit(self) -> None:
         state = {"calls": 0}
 
@@ -317,6 +401,33 @@ class ResearchClientTests(unittest.TestCase):
 
         self.assertTrue(all(value is None for value in results))
         self.assertLess(elapsed, 1.0)
+
+    def test_fetcher_allows_poisoned_dns_when_proxied(self) -> None:
+        import socket
+        from unittest import mock
+
+        from dtk.research.fetch import Fetcher
+
+        fetcher = Fetcher()
+        poisoned = [(None, None, None, "", ("2001::dead:beef", 0))]
+        proxies = {"https": "http://127.0.0.1:7890"}
+        with mock.patch("urllib.request.getproxies", return_value=proxies), mock.patch(
+            "socket.getaddrinfo", return_value=poisoned
+        ):
+            # the proxy resolves the hostname; local poisoned answers must not veto
+            self.assertTrue(
+                fetcher._url_allowed("https://danbooru.donmai.us/wiki_pages/x")
+            )
+            # literal private targets stay blocked even behind a proxy
+            self.assertFalse(fetcher._url_allowed("https://192.168.1.1/tag"))
+
+        with mock.patch("urllib.request.getproxies", return_value={}), mock.patch(
+            "socket.getaddrinfo", return_value=poisoned
+        ):
+            # direct connection with a fully blocked resolution is rejected
+            self.assertFalse(
+                fetcher._url_allowed("https://danbooru.donmai.us/wiki_pages/x")
+            )
 
     def test_fetcher_does_not_cache_transient_failure(self) -> None:
         state = {"calls": 0}

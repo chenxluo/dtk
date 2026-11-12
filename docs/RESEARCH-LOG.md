@@ -174,3 +174,32 @@ unknown 共 14 个：
 - 本站恢复后核对官方数据：live Danbooru 已有 `wall` 官方 Wiki；`pink_headwear` 已被官方弃用（too broad）。两者都不发布——官方数据优先，研究不覆盖官方。
 - 结论：flash 在意图门控上与 27B 持平，在研究上多解出 2 个 27B 放弃的标签，输出 token 约 27B 的 1/12，速度相当；后续研究默认用 flash（`--key-file key/qwen3.8flash.txt --insecure-tls`），27B 保留对照。
 - 连带修复：模型现在会构造中文路径 URL（如萌娘百科 `/鬼角`），`http.client` 请求行 ascii 编码直接崩溃；Fetcher 已在请求前做百分号编码（含回归测试）。CLI 流统一重配 UTF-8，后台管道不再因中文进度行崩溃。
+
+## 2026-11-12 · 免 key Parallel MCP 实测
+
+核实官方文档与实测 `https://mcp.parallel.ai/mcp`（streamable HTTP，JSON-RPC）：不带任何凭证即可用 `web_search`/`web_fetch`/`web_decisions`，低限额免费；`web_research` 才需要登录。决定不使用付费层级，已实现 `ParallelMCPSearchClient`（`--search-provider parallel-mcp`，默认 0.5 QPS 节流 + 磁盘缓存 + 会话过期重初始化）。
+
+质量对比（同一查询思路）：
+
+| Provider | `oni_horns` 相关首条结果 |
+|---|---|
+| SearXNG/Bing（此前） | Taco Bell、彩票等完全无关页 |
+| Parallel MCP（免 key） | `danbooru.donmai.us/wiki_pages/oni_horns` 官方 Wiki，后续为 oni/skin-covered_horns/horns 相关词条 |
+| Parallel MCP（免 key） | `french_braid` 查询首条为 Danbooru 论坛『fixing the french_braid tag』与 french_braided_* Wiki 系 |
+
+免费路径走 `fast` 模式、每结果自带 excerpt，研究 act 循环可直接据 excerpt 决定是否 fetch 全文。真实研究烟测见输出 `out/research/parallel_mcp_smoke.jsonl`。
+
+研究烟测（`french_braid`、`blue_neckwear`、`leaning_on_person`，此前 27B 与 flash 两轮均 unknown）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---:|---:|
+| completed | 0/3 | **3/3**（1–2 acts/Tag） |
+| 结构化失败 | 0 | 0 |
+| 耗时 | 94.7 秒 | 62.5 秒 |
+
+三条 verdict 的证据全部来自 `danbooru.donmai.us` 官方 Wiki，机械审计 invalid=0。`french_braid`、`blue_neckwear` 的官方 Wiki 实为弃用通知（官方建议改用更具体标签），定义里已如实转述。候选在 `out/research/parallel_mcp_smoke2.jsonl`，等待人工决定是否发布。
+
+烟测同时暴露并修复两个抓取问题：
+
+1. GFW 对 Danbooru 的 DNS 污染会返回假 AAAA（`2001::/32` 保留段），SSRF 防护的“任一解析地址在封锁段即拒绝”误杀全部 Danbooru 抓取。现在走系统代理时域名校验放行（解析实际发生在代理侧，且字面私网 IP 仍被拒绝）。
+2. Fetcher 伪装完整 Chrome UA 反而被 Cloudflare 403；改回诚实的 `DTK-research/0.3` UA 后官方 Wiki 页直接 200。

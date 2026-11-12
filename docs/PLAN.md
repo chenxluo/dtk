@@ -42,7 +42,7 @@
 - 本站恢复后已导入官方 Tag Implication：47,069 条 active 关系入库为加性表 `tag_implications`（48 页、约 109 秒）；`get_tag`/MCP/REST 自动附带 `implications`（如 `pantyshot -> panties`），见 ADR 0007。
 - 新增 `check-upstream`：本站最新帖 12,527,336（2026-11-12）对比快照 12,056,584（2026-08-23），快照落后约 47.1 万帖，只报告不自动同步。
 - 研究模型可切换到局域网 `qwen3.8-flash-next-unsloth-ud-iq4_xs-v31`（262,144 上下文，自签 HTTPS 经 `--insecure-tls` + `--key-file key/qwen3.8flash.txt` 接入）。
-- 新增 Parallel Search API provider（`--search-provider parallel`，key 走 `PARALLEL_API_KEY` 或 `key/parallel.txt`）；未配置 key 前仅完成客户端与单元测试，真实质量未评测。
+- 新增免 key 的 Parallel MCP 搜索 provider（`--search-provider parallel-mcp`，走 `https://mcp.parallel.ai/mcp` 的 `web_search`，免费低限额）：实测首条命中即 Danbooru 官方 Wiki/论坛页，显著优于 SearXNG/Bing；不使用付费层级。配套修复 DNS 污染误杀（代理下域名校验放行）与 Chrome UA 反被 403 的问题后，3 个两轮 unknown 的标签一次烟测全部 completed，证据全部来自官方 Wiki。
 - 研究提示词已加入二次元主题约束：ACG 语境优先、多义词取二次元义项、优先萌娘百科/pixiv 百科等来源（SearXNG 与 Parallel 共用）。
 
 ## 里程碑

@@ -13,10 +13,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from .cache import write_json_atomic
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
+USER_AGENT = "DTK-research/0.3 (local Danbooru tag knowledge research; contact: local)"
 BINARY_CONTENT = ("image/", "video/", "audio/", "pdf", "octet-stream", "zip")
 
 
@@ -112,13 +109,20 @@ class Fetcher:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return False
-        return self.allow_private or self._host_allowed(parsed.hostname or "")
+        if self.allow_private:
+            return True
+        # ponytail: with a system proxy the proxy resolves the hostname with its
+        # own DNS, so locally poisoned answers must not veto legitimate sites.
+        proxied = urllib.request.getproxies().get(parsed.scheme) is not None
+        return self._host_allowed(parsed.hostname or "", proxied=proxied)
 
     @staticmethod
-    def _host_allowed(hostname: str) -> bool:
+    def _host_allowed(hostname: str, proxied: bool = False) -> bool:
         try:
             addresses = [ipaddress.ip_address(hostname.strip("[]"))]
         except ValueError:
+            if proxied:
+                return True
             try:
                 # ponytail: resolve-then-fetch guards normal redirects and DNS;
                 # a dedicated transport is needed to eliminate DNS rebinding.

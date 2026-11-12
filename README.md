@@ -54,8 +54,9 @@ python -m dtk import-implications
 python -m dtk check-upstream
 
 # 12. 研究模型切换到局域网 qwen3.8 flash（key 文件含 base URL/模型/key）
-python -m dtk research --types general --limit 10 --key-file key/qwen3.8flash.txt --insecure-tls
-# 搜索 provider 换成 Parallel（需要 PARALLEL_API_KEY 或 key/parallel.txt）
+# 搜索 provider 换成免 key 的 Parallel MCP（免费低限额，推荐先试）
+python -m dtk research --types general --limit 10 --search-provider parallel-mcp
+# 或使用 REST provider（需要 PARALLEL_API_KEY 或 key/parallel.txt）
 python -m dtk research --types general --limit 10 --search-provider parallel
 
 Derived Store 默认写入 `data/dtk.db`，可用 `--db` 或 `DTK_DB` 覆盖。`data/` 不入 Git，Derived Store 可随时删除重建。

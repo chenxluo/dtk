@@ -26,7 +26,7 @@ from .research.queue import (
 from .research.searx import SearXNGClient
 from .research.publish import load_research_records, publish_research
 from .research.tag_task import TagResearchTask
-from .research.parallel import ParallelSearchClient, load_parallel_key
+from .research.parallel import ParallelMCPSearchClient, ParallelSearchClient, load_parallel_key
 from .upstream import DEFAULT_BASE_URL as UPSTREAM_BASE_URL, import_implications, upstream_status
 from .vectors import (
     EmbeddingClient,
@@ -341,7 +341,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip TLS verification for LAN endpoints with self-signed certificates",
     )
     research_parser.add_argument(
-        "--search-provider", choices=("searx", "parallel"), default="searx"
+        "--search-provider",
+        choices=("searx", "parallel", "parallel-mcp"),
+        default="searx",
     )
     research_parser.add_argument(
         "--parallel-mode", choices=("turbo", "fast", "basic", "advanced"), default="fast"
@@ -486,7 +488,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 endpoint = config.get("base_url", endpoint)
                 model = config.get("model", model)
                 api_key = config.get("api_key")
-            if args.search_provider == "parallel":
+            if args.search_provider == "parallel-mcp":
+                search_client = ParallelMCPSearchClient(cache_dir=args.cache)
+            elif args.search_provider == "parallel":
                 search_client = ParallelSearchClient(
                     args.parallel_key or load_parallel_key(),
                     mode=args.parallel_mode,
