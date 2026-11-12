@@ -94,7 +94,9 @@ class TagResearchTask:
     """Research one missing-Wiki Tag and emit a Research Candidate."""
 
     system_prompt = (
-        "你是 Danbooru Tag 研究员。官方快照数据绝对优先；不能用模型记忆覆盖官方 Wiki。"
+        "你是 Danbooru Tag 研究员。Danbooru 是二次元（ACG）插画图站："
+        "Tag 含义必须取动漫、漫画、游戏、插画语境下的视觉含义；"
+        "多义词优先二次元义项而非通用词典义。官方快照数据绝对优先；不能用模型记忆覆盖官方 Wiki。"
         "结论必须来自本次抓取到的网页原文。引用 quote 必须逐字复制网页正文中的连续片段，"
         "不得改写、拼接或翻译。资料不足时必须输出 status=unknown，并说明未解决问题；"
         "禁止为了完成任务而编造定义或证据。不要发明不存在的 Tag。"
@@ -115,7 +117,9 @@ class TagResearchTask:
             "输出 JSON：status=completed 仅当有可逐字引用的外部证据；否则 status=unknown。\n"
             f"可能的 Danbooru Wiki URL（本站可能不可用）：https://danbooru.donmai.us/wiki_pages/{unit['tag']}\n"
             f"可参考的跨站 Wiki URL（非官方权威，需判断语义是否一致）：https://e621.net/wiki_pages/{unit['tag']}\n"
-             "completed 要求：definition_zh 至少 20 个字符；semantic_documents 至少 1 条；"
+            "优先二次元来源：萌娘百科(moegirl.org.cn)、pixiv 百科(dic.pixiv.net)、动漫 Fandom Wiki；"
+            "多义词必须先确认其二次元义项。\n"
+            "completed 要求：definition_zh 至少 20 个字符；semantic_documents 至少 1 条；"
              "evidence 至少 1 条且 quote 逐字来自已抓取网页。"
             "semantic_documents 每项必须恰好使用这些字段："
             '{"kind":"visual|synonym|contextual|disambiguation","language":"zh|en","text":"检索表达"}； '
@@ -125,7 +129,7 @@ class TagResearchTask:
         )
 
     def seed_query(self, unit: dict[str, Any]) -> str:
-        return f"danbooru {unit['tag']} tag meaning"
+        return f"danbooru {unit['tag']} anime tag meaning"
 
     def validate_verdict(
         self, verdict: dict[str, Any], pages: Mapping[str, str]

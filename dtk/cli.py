@@ -26,6 +26,8 @@ from .research.queue import (
 from .research.searx import SearXNGClient
 from .research.publish import load_research_records, publish_research
 from .research.tag_task import TagResearchTask
+from .research.parallel import ParallelSearchClient, load_parallel_key
+from .upstream import DEFAULT_BASE_URL as UPSTREAM_BASE_URL, import_implications, upstream_status
 from .vectors import (
     EmbeddingClient,
     VectorIndex,
@@ -57,6 +59,25 @@ def _default_research_vectors() -> Path:
 
 def _default_searx_url() -> str:
     return os.environ.get("DTK_SEARX_URL", "http://127.0.0.1:8989")
+
+
+def _key_file_config(path: str) -> dict[str, str]:
+    """Parse the label/value files under key/ into base_url/model/api_key."""
+    values: dict[str, str] = {}
+    labels = {"base url", "模型 id", "model", "key", "api key"}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.lower() in labels:
+            continue
+        if "://" in line and "base_url" not in values:
+            values["base_url"] = line
+        elif "model" not in values:
+            values["model"] = line
+        elif "api_key" not in values:
+            values["api_key"] = line
+    if not values:
+        raise ValueError(f"no base URL/model/key found in {path}")
+    return values
 
 
 def _print_json(value: Any) -> None:
@@ -97,6 +118,12 @@ def _print_tag(record: dict[str, Any]) -> None:
     print("aliases:")
     for alias in record["aliases"]:
         print(f"  - {alias}")
+    if record.get("implications"):
+        print("implications:")
+        for tag in record["implications"]["implies"]:
+            print(f"  -> {tag}")
+        for tag in record["implications"]["implied_by"]:
+            print(f"  <- {tag}")
     print("wiki:")
     print(record["wiki"] or "(none)")
 
@@ -138,10 +165,14 @@ def _add_vector_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--embedding-model", default=default_embedding_model())
     parser.add_argument("--endpoint", default=default_lm_base_url())
-    parser.add_argument(
-        "--intent", action="store_true", help="use local LLM to reject non-visual queries"
-    )
+    parser.add_argument("--intent", action="store_true", help="use local LLM to reject non-visual queries")
     parser.add_argument("--intent-model", default=_default_research_model())
+    parser.add_argument("--intent-key-file", help="LLM key file (base URL/model/key) for the intent gate")
+    parser.add_argument(
+        "--insecure-tls",
+        action="store_true",
+        help="skip TLS verification for LAN endpoints with self-signed certificates",
+    )
 
 
 def _vector_state(
@@ -185,11 +216,19 @@ def _vector_state(
 def _intent_state(args: argparse.Namespace) -> IntentClassifier | None:
     if not args.intent:
         return None
+    endpoint, model, api_key = args.endpoint, args.intent_model, None
+    if args.intent_key_file:
+        config = _key_file_config(args.intent_key_file)
+        endpoint = config.get("base_url", endpoint)
+        model = config.get("model", model)
+        api_key = config.get("api_key")
     return IntentClassifier(
         ResearchLLMClient(
-            args.endpoint,
-            args.intent_model,
+            endpoint,
+            model,
+            api_key=api_key,
             cache_dir="cache/intent",
+            verify_tls=not args.insecure_tls,
         )
     )
 
@@ -292,6 +331,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research_parser.add_argument("--model", default=_default_research_model())
     research_parser.add_argument("--endpoint", default=default_lm_base_url())
+    research_parser.add_argument(
+        "--key-file",
+        help="LLM key file with base URL/model/key (overrides --endpoint/--model)",
+    )
+    research_parser.add_argument(
+        "--insecure-tls",
+        action="store_true",
+        help="skip TLS verification for LAN endpoints with self-signed certificates",
+    )
+    research_parser.add_argument(
+        "--search-provider", choices=("searx", "parallel"), default="searx"
+    )
+    research_parser.add_argument(
+        "--parallel-mode", choices=("turbo", "fast", "basic", "advanced"), default="fast"
+    )
+    research_parser.add_argument(
+        "--parallel-key",
+        help="Parallel API key (env PARALLEL_API_KEY or key/parallel.txt)",
+    )
+    research_parser.add_argument(
+        "--parallel-domains",
+        help="comma-separated include_domains handed to the Parallel source policy",
+    )
     research_parser.add_argument("--searx", default=_default_searx_url())
     research_parser.add_argument("--dry-run", action="store_true")
     research_parser.add_argument("--json", action="store_true")
@@ -310,6 +372,22 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument("records")
     audit_parser.add_argument("--json", action="store_true")
 
+    implications_parser = subparsers.add_parser(
+        "import-implications", help="import official Danbooru Tag Implications"
+    )
+    _add_db_argument(implications_parser)
+    implications_parser.add_argument("--base-url", default=UPSTREAM_BASE_URL)
+    implications_parser.add_argument("--status", default="active")
+    implications_parser.add_argument("--delay", type=float, default=0.7)
+    implications_parser.add_argument("--json", action="store_true")
+
+    upstream_parser = subparsers.add_parser(
+        "check-upstream", help="compare live Danbooru with the local Source Snapshot"
+    )
+    _add_db_argument(upstream_parser)
+    upstream_parser.add_argument("--base-url", default=UPSTREAM_BASE_URL)
+    upstream_parser.add_argument("--json", action="store_true")
+
     return parser
 
 
@@ -319,6 +397,10 @@ def _embed_progress(done: int, total: int) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    # background pipes default to ascii on some hosts; Chinese progress lines must survive
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
@@ -398,16 +480,43 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                 return 0
 
+            endpoint, model, api_key = args.endpoint, args.model, None
+            if args.key_file:
+                config = _key_file_config(args.key_file)
+                endpoint = config.get("base_url", endpoint)
+                model = config.get("model", model)
+                api_key = config.get("api_key")
+            if args.search_provider == "parallel":
+                search_client = ParallelSearchClient(
+                    args.parallel_key or load_parallel_key(),
+                    mode=args.parallel_mode,
+                    include_domains=[
+                        domain.strip()
+                        for domain in (args.parallel_domains or "").split(",")
+                        if domain.strip()
+                    ]
+                    or None,
+                    cache_dir=args.cache,
+                )
+                if not search_client.api_key:
+                    raise ValueError(
+                        "Parallel API key missing: use --parallel-key, "
+                        "PARALLEL_API_KEY, or key/parallel.txt"
+                    )
+            else:
+                search_client = SearXNGClient(args.searx, cache_dir=args.cache)
             stats = run_research(
                 TagResearchTask(),
                 units,
                 args.out,
                 llm=ResearchLLMClient(
-                    args.endpoint,
-                    args.model,
+                    endpoint,
+                    model,
+                    api_key=api_key,
                     cache_dir=args.cache,
+                    verify_tls=not args.insecure_tls,
                 ),
-                search=SearXNGClient(args.searx, cache_dir=args.cache),
+                search=search_client,
                 fetcher=Fetcher(cache_dir=args.cache),
                 max_acts=args.max_acts,
                 top_n=args.top_n,
@@ -468,6 +577,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for issue in result["issues"]:
                     print(f"issue: {issue['tag']}: {'; '.join(issue['errors'])}")
             return 1 if result["invalid"] else 0
+
+        if args.command == "import-implications":
+            result = import_implications(
+                args.db,
+                base_url=args.base_url,
+                status=args.status,
+                delay=args.delay,
+            )
+            if args.json:
+                _print_json(result)
+            else:
+                print(
+                    f"imported {result['imported']} implications "
+                    f"({result['pages']} pages, status={result['status']})"
+                )
+            return 0
+
+        if args.command == "check-upstream":
+            conn = open_db(args.db)
+            try:
+                result = upstream_status(conn, base_url=args.base_url)
+            finally:
+                conn.close()
+            if args.json:
+                _print_json(result)
+            else:
+                for key, value in result.items():
+                    print(f"{key}: {value}")
+            return 0
 
         if args.command == "info":
             conn = open_db(args.db)

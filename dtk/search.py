@@ -324,6 +324,42 @@ def _research_record(conn: sqlite3.Connection, tag_id: int) -> dict[str, Any] | 
         "evidence": evidence,
     }
 
+
+def _implication_record(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
+    exists = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'tag_implications'
+        """
+    ).fetchone()
+    if exists is None:
+        return None
+    outgoing = [
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT consequent FROM tag_implications
+            WHERE antecedent = ? AND status = 'active'
+            ORDER BY consequent
+            """,
+            (name,),
+        )
+    ]
+    incoming = [
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT antecedent FROM tag_implications
+            WHERE consequent = ? AND status = 'active'
+            ORDER BY antecedent
+            """,
+            (name,),
+        )
+    ]
+    if not outgoing and not incoming:
+        return None
+    return {"implies": outgoing, "implied_by": incoming}
+
 def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
     """Return one canonical Tag record, or None when it does not exist."""
     row = conn.execute(
@@ -353,4 +389,5 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         "wiki_excerpt": _excerpt(row["wiki"]),
         "aliases": aliases,
         "research": _research_record(conn, row["id"]),
+        "implications": _implication_record(conn, row["name"]),
     }

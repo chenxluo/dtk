@@ -67,6 +67,10 @@ def html_text(raw: str) -> str:
         pass
     return " ".join(" ".join(parser.chunks).split())
 
+def _encode_url(url: str) -> str:
+    """Percent-encode non-ASCII URL characters (e.g. Chinese moegirl paths)."""
+    return urllib.parse.quote(url, safe="/%:=&?~#+$,;'@()*[]!.")
+
 
 class Fetcher:
     def __init__(
@@ -134,7 +138,7 @@ class Fetcher:
         opener = urllib.request.build_opener(_NoRedirect)
         for _ in range(5):
             request = urllib.request.Request(
-                current_url,
+                _encode_url(current_url),
                 headers={
                     "User-Agent": USER_AGENT,
                     "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",

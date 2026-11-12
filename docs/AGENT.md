@@ -51,7 +51,7 @@ MCP 是标准 stdio JSON-RPC，支持 `initialize`、`notifications/initialized`
 {"names": ["looking_at_viewer", "black_footwear"]}
 ```
 
-返回 `tags` 数组。每项包含官方 Wiki、Alias，以及人工发布后存在的 `research` 定义、语义文档、证据和发布时间。
+返回 `tags` 数组。每项包含官方 Wiki、Alias、人工发布后存在的 `research` 定义/语义文档/证据/发布时间，以及官方关系 `implications`：`implies`（打此 Tag 应同时打的 Tag）与 `implied_by`（反向）；无官方关系时为 `null`。implication 来自 Danbooru 官方 API，不是研究产出。
 
 不存在的名字在该位置返回 `null`，调用方应处理。
 

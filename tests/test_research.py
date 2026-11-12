@@ -86,6 +86,80 @@ class ResearchClientTests(unittest.TestCase):
         self.assertEqual(results[0]["url"], "https://example.com")
         self.assertEqual(client.queries, 1)
 
+    def test_parallel_client_posts_themed_search_and_caches(self) -> None:
+        captured = {}
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                captured["path"] = self.path
+                captured["key"] = self.headers.get("x-api-key")
+                length = int(self.headers.get("Content-Length") or 0)
+                captured["payload"] = json.loads(self.rfile.read(length))
+                body = json.dumps(
+                    {
+                        "results": [
+                            {
+                                "url": "https://moegirl.org.cn/example",
+                                "title": "萌娘百科条目",
+                                "excerpts": ["第一段", "第二段"],
+                            }
+                        ]
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            from dtk.research.parallel import ParallelSearchClient
+
+            client = ParallelSearchClient(
+                "secret-key",
+                base_url=f"http://127.0.0.1:{server.server_port}",
+                qps=0,
+                cache_dir=tmp.name,
+            )
+            results = client.search("oni_horns anime tag")
+            again = client.search("oni_horns anime tag")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        self.assertEqual(captured["path"], "/v1/search")
+        self.assertEqual(captured["key"], "secret-key")
+        objective = captured["payload"]["objective"]
+        self.assertIn("Danbooru", objective)
+        self.assertIn("anime", objective)
+        self.assertEqual(
+            captured["payload"]["search_queries"], ["oni_horns anime tag"]
+        )
+        self.assertEqual(results[0]["url"], "https://moegirl.org.cn/example")
+        self.assertEqual(results[0]["content"], "第一段\n第二段")
+        self.assertEqual(client.queries, 2)
+        self.assertEqual(client.cache_hits, 1)
+
+    def test_fetcher_encodes_non_ascii_urls(self) -> None:
+        from dtk.research.fetch import _encode_url
+
+        self.assertEqual(
+            _encode_url("https://zh.moegirl.org.cn/鬼角"),
+            "https://zh.moegirl.org.cn/%E9%AC%BC%E8%A7%92",
+        )
+        self.assertEqual(
+            _encode_url("https://e621.net/wiki_pages/oni_horns?page=2"),
+            "https://e621.net/wiki_pages/oni_horns?page=2",
+        )
+
     def test_llm_client_retries_rate_limit(self) -> None:
         state = {"calls": 0}
 

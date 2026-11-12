@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import ssl
 import threading
 import time
 import urllib.error
@@ -28,6 +29,7 @@ class ResearchLLMClient:
         cache_dir: str | Path | None = None,
         timeout: float = 600.0,
         disable_thinking: bool = True,
+        verify_tls: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -35,6 +37,8 @@ class ResearchLLMClient:
         self.cache_dir = Path(cache_dir) / "llm" if cache_dir else None
         self.timeout = timeout
         self.disable_thinking = disable_thinking
+        # ponytail: opt-in TLS bypass for LAN servers with self-signed certs only
+        self.ssl_context = None if verify_tls else ssl._create_unverified_context()
         self._lock = threading.Lock()
         self.calls = 0
         self.cache_hits = 0
@@ -93,7 +97,9 @@ class ResearchLLMClient:
                 headers=headers,
             )
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                with urllib.request.urlopen(
+                    request, timeout=self.timeout, context=self.ssl_context
+                ) as response:
                     data = json.load(response)
                 choices = data.get("choices") or []
                 if not choices:

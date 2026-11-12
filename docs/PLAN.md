@@ -21,9 +21,9 @@
 | General/Meta 研究候选 | 图量 ≥100 共 1,254；≥1000 共 375 | 默认研究范围 |
 | 中文 Wiki | 44,681，角色占 44,645，General 仅 33 | 中文视觉查询依靠跨语言向量与查询改写 |
 | 本地模型 | LM Studio 6001：`qwen3.8-27b`、Qwen3 Embedding 4B/8B | 默认本地模型 |
-| 缺失官方数据 | Implication、部分状态与更新时间 | 等本站恢复后增量补齐 |
+| 官方 Implication | 本站恢复，实时 API 可用（经系统代理） | 已导入 47,069 条 active implication |
 
-## 当前状态（2026-11-11）
+## 当前状态（2026-11-12）
 
 - M0、M1、M2 完成：Git 基线、规范、Derived Store、混合检索、CLI、多概念分组与本地 Web UI 已建立。
 - 真实快照导入对账：Tag 1,082,991 / Wiki 335,769 / Alias 616,836；导入耗时约 8 秒，派生库约 320 MB。
@@ -37,8 +37,13 @@
 - 已发布研究通过 `embed-research` 生成独立 25 文档向量索引；仅余弦 ≥0.65 的研究文档进入召回。目标查询 `单眼眨眼并且张嘴笑 -> ;d` 由 Top 10 未命中改善为排名第 1，47 条 Benchmark hit@5 0.830→0.851、MRR 0.746→0.756，未见整体回归。
 - Research 内核已修复 429 重试、SSRF 私网防护、LLM 缓存键污染、零进度循环、失败成本统计与并发输出锁。
 - 新增可选 `--intent` 本地 LLM 意图门（只判断视觉查询，不生成 Tag）。50 条 Benchmark 含 3 个无意义/非视觉负例：no_match_accuracy 由 0→1，正例检索指标不变；Web UI 实测返回空结果，无浏览器错误。
-- M4 已增加按需共现关系：CLI `related` 使用本地 post_tags、共现阈值和 Lift 排序，并提供包含快照身份的磁盘缓存；真实 `black_footwear` 查询验证通过，冷计算仍需离线预算。官方 Implication 继续等待本站恢复。
+- M4 已增加按需共现关系：CLI `related` 使用本地 post_tags、共现阈值和 Lift 排序，并提供包含快照身份的磁盘缓存；真实 `black_footwear` 查询验证通过，冷计算仍需离线预算。官方 Implication 已于本站恢复后导入（见上）。
 - M5 已提供本地 REST 与 stdio MCP 薄封装，Agent 工具为 `search_tags`/`get_tags`；真实 MCP 进程与语义搜索验证通过。研究写入接口不对外暴露，接入方式见 `docs/AGENT.md`。
+- 本站恢复后已导入官方 Tag Implication：47,069 条 active 关系入库为加性表 `tag_implications`（48 页、约 109 秒）；`get_tag`/MCP/REST 自动附带 `implications`（如 `pantyshot -> panties`），见 ADR 0007。
+- 新增 `check-upstream`：本站最新帖 12,527,336（2026-11-12）对比快照 12,056,584（2026-08-23），快照落后约 47.1 万帖，只报告不自动同步。
+- 研究模型可切换到局域网 `qwen3.8-flash-next-unsloth-ud-iq4_xs-v31`（262,144 上下文，自签 HTTPS 经 `--insecure-tls` + `--key-file key/qwen3.8flash.txt` 接入）。
+- 新增 Parallel Search API provider（`--search-provider parallel`，key 走 `PARALLEL_API_KEY` 或 `key/parallel.txt`）；未配置 key 前仅完成客户端与单元测试，真实质量未评测。
+- 研究提示词已加入二次元主题约束：ACG 语境优先、多义词取二次元义项、优先萌娘百科/pixiv 百科等来源（SearXNG 与 Parallel 共用）。
 
 ## 里程碑
 
