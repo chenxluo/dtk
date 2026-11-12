@@ -66,7 +66,7 @@ def _fts_rows(
             t.post_count,
             t.wiki,
             t.cn_name,
-            bm25(tag_fts, 4.0, 4.0, 2.0, 2.0, 0.2) AS bm25_score
+            bm25(tag_fts, 4.0, 4.0, 2.0, 2.0, 3.0, 0.2) AS bm25_score
         FROM tag_fts
         JOIN tag_details t ON t.id = tag_fts.tag_id
         WHERE tag_fts MATCH ?
@@ -368,7 +368,8 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
     """Return one canonical Tag record, or None when it does not exist."""
     row = conn.execute(
         """
-        SELECT id, name, type, post_count, wiki, wiki_source, cn_name, other_names_json
+        SELECT id, name, type, post_count, wiki, wiki_source, cn_name,
+               other_names_json, cn_definition, terms_json
         FROM tag_details
         WHERE lookup_key = ?
         """,
@@ -388,6 +389,10 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         other_names = json.loads(row["other_names_json"] or "[]")
     except (TypeError, ValueError):
         other_names = []
+    try:
+        terms = json.loads(row["terms_json"] or "[]")
+    except (TypeError, ValueError):
+        terms = []
     return {
         "tag": row["name"],
         "tag_id": row["id"],
@@ -397,8 +402,10 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         "wiki_excerpt": _excerpt(row["wiki"]),
         "wiki_source": row["wiki_source"],
         "cn_name": row["cn_name"],
+        "cn_definition": row["cn_definition"],
         "aliases": aliases,
         "other_names": other_names,
+        "search_terms": terms,
         "research": _research_record(conn, row["id"]),
         "implications": _implication_record(conn, row["name"]),
     }

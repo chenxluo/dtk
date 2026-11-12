@@ -162,9 +162,9 @@ class VectorIndex:
         return ranked
 
 
-def _other_names(other_names_json: str | None) -> list[str]:
+def _json_list(raw: str | None) -> list[str]:
     try:
-        values = json.loads(other_names_json or "[]")
+        values = json.loads(raw or "[]")
     except (TypeError, ValueError):
         return []
     return [str(value) for value in values] if isinstance(values, list) else []
@@ -177,6 +177,8 @@ def semantic_document(
     *,
     cn_name: str | None = None,
     other_names: Sequence[str] = (),
+    cn_definition: str | None = None,
+    terms: Sequence[str] = (),
 ) -> str:
     """Build one retrieval document from official name, aliases, and Wiki."""
     parts = [name.replace("_", " ")]
@@ -184,6 +186,9 @@ def semantic_document(
     if cn_name:
         parts.append(cn_name)
     parts.extend(str(value).replace("_", " ") for value in other_names)
+    parts.extend(str(value).replace("_", " ") for value in terms)
+    if cn_definition:
+        parts.append(cn_definition)
     if wiki:
         parts.append(wiki[:2000])
     return "\n".join(parts)
@@ -207,7 +212,7 @@ def build_vector_index(
     try:
         tag_rows = conn.execute(
             """
-            SELECT id, name, wiki, cn_name, other_names_json
+            SELECT id, name, wiki, cn_name, other_names_json, cn_definition, terms_json
             FROM tag_details
             WHERE type IN ('general', 'meta') AND post_count >= ?
             ORDER BY id
@@ -238,7 +243,9 @@ def build_vector_index(
             row["wiki"],
             aliases.get(row["id"], []),
             cn_name=row["cn_name"],
-            other_names=_other_names(row["other_names_json"]),
+            other_names=_json_list(row["other_names_json"]),
+            cn_definition=row["cn_definition"],
+            terms=_json_list(row["terms_json"]),
         )
         for row in tag_rows
     ]

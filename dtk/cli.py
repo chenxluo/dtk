@@ -15,7 +15,7 @@ from .mcp import StdioMCPServer, run_stdio
 from .relations import cooccurring_tags
 from .store import build_database, database_info, open_db, rebuild_search_index
 from .research.audit import audit_research
-from .research.engine import run_research
+from .enrich import enrich_tags
 from .research.fetch import Fetcher
 from .research.llm import ResearchLLMClient
 from .research.queue import (
@@ -361,6 +361,20 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--dry-run", action="store_true")
     research_parser.add_argument("--json", action="store_true")
 
+    enrich_parser = subparsers.add_parser(
+        "enrich", help="generate retrieval terms and Chinese definitions (LLM)"
+    )
+    enrich_parser.add_argument("--db", default=str(_default_db()))
+    enrich_parser.add_argument("--cache", default="cache/research")
+    enrich_parser.add_argument("--min-count", type=int, default=10000)
+    enrich_parser.add_argument("--limit", type=int, default=None)
+    enrich_parser.add_argument("--workers", type=int, default=2)
+    enrich_parser.add_argument("--model", default=_default_research_model())
+    enrich_parser.add_argument("--endpoint", default=default_lm_base_url())
+    enrich_parser.add_argument("--key-file")
+    enrich_parser.add_argument("--insecure-tls", action="store_true")
+    enrich_parser.add_argument("--json", action="store_true")
+
     publish_parser = subparsers.add_parser(
         "publish-research", help="publish explicitly accepted research candidates"
     )
@@ -557,6 +571,46 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_json(stats)
             else:
                 for key, value in stats.items():
+                    print(f"{key}: {value}")
+            return 0
+
+        if args.command == "enrich":
+            endpoint, model, api_key = args.endpoint, args.model, None
+            if args.key_file:
+                config = _key_file_config(args.key_file)
+                endpoint = config.get("base_url", endpoint)
+                model = config.get("model", model)
+                api_key = config.get("api_key")
+            started = time.monotonic()
+
+            def _enrich_progress(done: int, total: int, note: str) -> None:
+                elapsed = time.monotonic() - started
+                rate = done / elapsed if elapsed else 0.0
+                remaining = (total - done) / rate if rate else 0.0
+                suffix = f" ({note})" if note else ""
+                print(
+                    f"[enrich] {done}/{total} ({rate:.1f}/s, ~{remaining/60:.0f}m left){suffix}",
+                    flush=True,
+                )
+
+            result = enrich_tags(
+                args.db,
+                ResearchLLMClient(
+                    endpoint,
+                    model,
+                    api_key=api_key,
+                    cache_dir=args.cache,
+                    verify_tls=not args.insecure_tls,
+                ),
+                min_post_count=args.min_count,
+                limit=args.limit,
+                workers=args.workers,
+                progress=_enrich_progress,
+            )
+            if args.json:
+                _print_json(result)
+            else:
+                for key, value in result.items():
                     print(f"{key}: {value}")
             return 0
 

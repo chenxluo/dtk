@@ -127,3 +127,44 @@ class TranslationImportTests(unittest.TestCase):
 
         self.assertEqual(result["matched"], 2)
         self.assertEqual(record["cn_name"], "发带")
+
+
+class EnrichmentTests(unittest.TestCase):
+    def test_enrich_tags_generates_and_normalizes_terms(self) -> None:
+        from dtk.enrich import ENRICH_SYSTEM, enrich_tags
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.db"
+            derived = root / "derived.db"
+            make_source(source)
+            build_database(source, derived)
+
+            class FakeLLM:
+                model = "fake"
+
+                def chat(self, messages):
+                    assert "标签检索增强" in ENRICH_SYSTEM
+                    assert "标签:" in messages[1]["content"]
+                    return (
+                        '```json\n{"cn_definition": "角色直视观者。", '
+                        '"zh_terms": ["看向镜头", "看镜头", "看向观众", "看镜头"], '
+                        '"en_terms": ["eye contact"], '
+                        '"facets": {"expression": ["eye_contact"]}}\n```',
+                        {"in": 10, "out": 5},
+                        False,
+                    )
+
+            result = enrich_tags(derived, FakeLLM(), min_post_count=100)
+            conn = open_db(derived)
+            try:
+                record = get_tag(conn, "looking_at_viewer")
+            finally:
+                conn.close()
+
+        self.assertEqual(result["enriched"], 5)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(record["cn_definition"], "角色直视观者。")
+        self.assertIn("看向镜头", record["search_terms"])
+        self.assertEqual(record["search_terms"].count("看镜头"), 1)
+        self.assertIn("eye contact", record["search_terms"])

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .enrich import ENRICHMENT_SCHEMA
 from .translations import TRANSLATIONS_SCHEMA
 from .upstream import UPSTREAM_SCHEMA
 
@@ -47,6 +48,7 @@ CREATE VIRTUAL TABLE tag_fts USING fts5(
     cn_name,
     aliases,
     other_names,
+    terms,
     wiki,
     tag_id UNINDEXED
 );
@@ -66,16 +68,21 @@ SELECT
         WHEN t.wiki IS NOT NULL AND trim(t.wiki) <> '' THEN 'snapshot'
     END AS wiki_source,
     tr.cn_name AS cn_name,
-    u.other_names_json AS other_names_json
+    u.other_names_json AS other_names_json,
+    e.cn_definition AS cn_definition,
+    e.terms_json AS terms_json
 FROM tags t
 LEFT JOIN upstream_wikis u ON u.tag_id = t.id
-LEFT JOIN tag_translations tr ON tr.tag_id = t.id;
+LEFT JOIN tag_translations tr ON tr.tag_id = t.id
+LEFT JOIN tag_enrichment e ON e.tag_id = t.id;
 """
 
-_ADDITIVE_SCHEMA = UPSTREAM_SCHEMA + TRANSLATIONS_SCHEMA + _TAG_DETAILS_VIEW
+_ADDITIVE_SCHEMA = (
+    UPSTREAM_SCHEMA + TRANSLATIONS_SCHEMA + ENRICHMENT_SCHEMA + _TAG_DETAILS_VIEW
+)
 
 _FTS_INSERT = """
-INSERT INTO tag_fts(tag_id, name, cn_name, aliases, other_names, wiki)
+INSERT INTO tag_fts(tag_id, name, cn_name, aliases, other_names, terms, wiki)
 WITH alias_text(tag_id, aliases) AS (
     SELECT tag_id, group_concat(replace(alias, '_', ' '), char(10))
     FROM aliases
@@ -92,12 +99,14 @@ SELECT
     coalesce(tr.cn_name, ''),
     coalesce(a.aliases, ''),
     coalesce(o.names, ''),
+    coalesce(e.terms_json, ''),
     coalesce(u.body, t.wiki, '')
 FROM tags t
 LEFT JOIN alias_text a ON a.tag_id = t.id
 LEFT JOIN other_text o ON o.tag_id = t.id
 LEFT JOIN upstream_wikis u ON u.tag_id = t.id
 LEFT JOIN tag_translations tr ON tr.tag_id = t.id
+LEFT JOIN tag_enrichment e ON e.tag_id = t.id
 """
 
 
