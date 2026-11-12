@@ -188,8 +188,8 @@ def import_wikis(
     artist_min_count: int = 1000,
     limit: int | None = None,
     workers: int = 6,
+    request_delay: float = 1.0,
     timeout: float = 30.0,
-    fetch_json: Callable[..., Any] = _fetch_json,
     progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Fill snapshot Wiki gaps from the official Wiki API (additive, resumable).
@@ -204,7 +204,7 @@ def import_wikis(
     if not database.is_file():
         raise FileNotFoundError(f"derived store not found: {database}")
 
-    connection = sqlite3.connect(database)
+    connection = sqlite3.connect(database, timeout=120.0)
     try:
         connection.executescript(_SCHEMA)
         candidates = _wiki_candidates(
@@ -223,7 +223,11 @@ def import_wikis(
                 f"{base_url}/wiki_pages.json?limit=5&search[title]="
                 f"{urllib.parse.quote(name, safe='')}"
             )
-            pages = fetch_json(url, timeout=timeout)
+            try:
+                pages = fetch_json(url, timeout=timeout)
+            finally:
+                # pace every worker so sustained load cannot melt the local proxy
+                time.sleep(request_delay)
             for page in pages if isinstance(pages, list) else []:
                 if str(page.get("title") or "").lower() == name.lower():
                     return tag_id, name, page

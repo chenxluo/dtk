@@ -276,7 +276,7 @@ def rebuild_search_index(db_path: str | Path) -> dict[str, Any]:
     database = Path(db_path).resolve()
     if not database.is_file():
         raise FileNotFoundError(f"derived store not found: {database}")
-    conn = sqlite3.connect(database)
+    conn = sqlite3.connect(database, timeout=120.0)
     try:
         conn.executescript(_ADDITIVE_SCHEMA)
         conn.execute("DROP TABLE IF EXISTS tag_fts")

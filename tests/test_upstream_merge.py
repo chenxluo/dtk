@@ -102,13 +102,13 @@ class TranslationImportTests(unittest.TestCase):
             external = sqlite3.connect(ffdkj)
             external.executescript(
                 """
-                CREATE TABLE tag (
+                CREATE TABLE tags (
                     name TEXT PRIMARY KEY,
                     category INTEGER,
                     cn_name TEXT,
                     post_count INTEGER
                 );
-                INSERT INTO tag VALUES
+                INSERT INTO tags VALUES
                     ('hair_band', 0, '发带', 200),
                     ('Long Hair', 0, '长发', 50000),
                     ('not_in_store', 0, '不存在', 5),

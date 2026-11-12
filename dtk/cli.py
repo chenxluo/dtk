@@ -407,6 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
     wikis_parser.add_argument("--artist-min-count", type=int, default=1000)
     wikis_parser.add_argument("--limit", type=int, default=None)
     wikis_parser.add_argument("--workers", type=int, default=6)
+    wikis_parser.add_argument("--delay", type=float, default=1.0)
     wikis_parser.add_argument("--json", action="store_true")
 
     translations_parser = subparsers.add_parser(
@@ -698,6 +699,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 artist_min_count=args.artist_min_count,
                 limit=args.limit,
                 workers=args.workers,
+                request_delay=args.delay,
                 progress=_wiki_progress,
             )
             if args.json:

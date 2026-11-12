@@ -61,14 +61,14 @@ def import_translations(
         raise FileNotFoundError(f"translation table not found: {src}")
 
     fetched_at = datetime.now(timezone.utc).isoformat()
-    connection = sqlite3.connect(database)
+    connection = sqlite3.connect(database, timeout=120.0)
     try:
         connection.executescript(_SCHEMA)
         connection.execute("ATTACH DATABASE ? AS tl", (str(src),))
         rows = connection.execute(
             """
             SELECT t.id, tl.cn_name
-            FROM tl.tag tl
+            FROM tl.tags tl
             JOIN tags t ON t.lookup_key = lower(replace(tl.name, ' ', '_'))
             WHERE tl.cn_name IS NOT NULL AND trim(tl.cn_name) <> ''
             """
@@ -80,7 +80,7 @@ def import_translations(
             """,
             [(tag_id, cn_name.strip(), source_label, fetched_at) for tag_id, cn_name in rows],
         )
-        total = connection.execute("SELECT COUNT(*) FROM tl.tag").fetchone()[0]
+        total = connection.execute("SELECT COUNT(*) FROM tl.tags").fetchone()[0]
         # no DETACH needed: closing the connection releases the attached db
         connection.execute(
             """
