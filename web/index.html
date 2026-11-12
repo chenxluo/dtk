@@ -341,13 +341,24 @@ async function loadTagDetail(name, container, button) {
         detailText += `\n证据：\n${record.research.evidence.map(item => `- ${item.quote}\n  ${item.url}`).join('\n')}\n`;
       }
       detailText += `\n发布时间：${record.research.published_at}\n`;
+    if (record.cn_definition) {
+      detailText += `\n中文定义：${record.cn_definition}\n`;
     }
     detailText += record.wiki
-      ? `\n官方 Wiki：\n${record.wiki}`
+      ? `\n官方 Wiki${record.wiki_source === 'upstream' ? '（官方线站同步）' : ''}：\n${record.wiki}`
       : '\n官方 Wiki：当前快照没有原文。';
     body.textContent = detailText;
+    if (record.cn_name) {
+      body.textContent += `\n\n中文名：${record.cn_name}`;
+    }
     if (record.aliases?.length) {
-      body.textContent += `\n\n别名：${record.aliases.join('、')}`;
+      body.textContent += `\n别名：${record.aliases.join('、')}`;
+    }
+    if (record.other_names?.length) {
+      body.textContent += `\n官方别名（含中/日）：${record.other_names.join('、')}`;
+    }
+    if (record.search_terms?.length) {
+      body.textContent += `\n检索联想词：${record.search_terms.join('、')}`;
     }
     details.append(summary, body);
     container.append(details);
@@ -369,6 +380,9 @@ function renderResult(item, index) {
     makeElement('code', 'tag', item.tag),
     makeElement('span', 'chip', item.type)
   );
+  if (item.cn_name) {
+    tagLine.append(makeElement('span', 'chip cn', item.cn_name));
+  }
 
   const meta = makeElement('div', 'meta');
   const matchText = matchLabels[item.matched_by] || item.matched_by;
