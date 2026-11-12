@@ -118,10 +118,28 @@ def enrich_tags(
 
     def run_one(row: sqlite3.Row) -> None:
         user = f"标签: {row['name']}\n中文名: {row['cn_name'] or '无'}\nWiki摘录: {(row['wiki'] or '')[:1200] or '无'}"
-        text, tokens, _cached = llm.chat(
-            [{"role": "system", "content": ENRICH_SYSTEM}, {"role": "user", "content": user}]
-        )
-        normalized = _normalize(_extract_json(text))
+        messages = [
+            {"role": "system", "content": ENRICH_SYSTEM},
+            {"role": "user", "content": user},
+        ]
+        text, tokens, _cached = llm.chat(messages)
+        try:
+            normalized = _normalize(_extract_json(text))
+        except (json.JSONDecodeError, ValueError):
+            # ponytail: one corrective retry; fresh messages also bypass the
+            # response cache so a malformed cached answer cannot stick forever
+            messages.append({"role": "assistant", "content": text[:2000]})
+            messages.append(
+                {"role": "user", "content": "上次输出不是合法 JSON,请重新只输出一个合法 JSON 对象。"}
+            )
+            text, retry_tokens, _cached = llm.chat(messages)
+            normalized = _normalize(_extract_json(text))
+            tokens = {
+                "in": (tokens.get("in", 0) if isinstance(tokens, dict) else 0)
+                + (retry_tokens.get("in", 0) if isinstance(retry_tokens, dict) else 0),
+                "out": (tokens.get("out", 0) if isinstance(tokens, dict) else 0)
+                + (retry_tokens.get("out", 0) if isinstance(retry_tokens, dict) else 0),
+            }
         with lock:
             connection.execute(
                 """
