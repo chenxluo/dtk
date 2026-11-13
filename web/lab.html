@@ -338,7 +338,7 @@ const jobStatusText = document.getElementById('job-status');
 const jobLog = document.getElementById('job-log');
 const candInfo = document.getElementById('cand-info');
 const candPublish = document.getElementById('cand-publish');
-const JOB_LABELS = {research: '研究', publish: '审批发布', embed_research: '重建研究向量'};
+const JOB_LABELS = {research: '研究', publish: '审批发布', embed_research: '重建研究向量', rebuild_fts: '重建 FTS 索引', import_implications: '导入联动规则', import_wikis: '补上游 Wiki', import_translations: '导入中文翻译', check_upstream: '对比线上快照'};
 let pollTimer = null;
 
 async function postJson(url, payload) {
