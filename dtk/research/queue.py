@@ -43,6 +43,10 @@ def build_research_queue(
             WHERE t.type IN ({placeholders})
               AND t.wiki IS NULL
               AND t.post_count >= ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM upstream_wikis u
+                  WHERE u.tag_id = t.id AND u.body IS NOT NULL
+              )
             ORDER BY t.post_count DESC, t.name
             LIMIT ?
         )
