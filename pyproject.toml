@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "danbooru-tag-knowledge"
-version = "0.3.0"
+version = "0.4.0"
 description = "Entity-centric Danbooru tag knowledge and retrieval service"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24"]

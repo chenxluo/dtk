@@ -5,7 +5,7 @@
 
 #define MyAppName "Danbooru Tag Knowledge"
 #define MyAppShortName "DTK"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "chenxluo"
 #define MyAppURL "https://github.com/chenxluo/dtk"
 #define MyAppExeName "DTK.exe"

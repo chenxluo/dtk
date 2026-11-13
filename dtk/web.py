@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -268,9 +269,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib HTTP API
         route = urlparse(self.path)
-        if route.path != "/api/jobs":
-            self._send_json({"error": "not_found"}, status=404)
-            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
@@ -280,6 +278,12 @@ class _Handler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             self._send_json({"error": "invalid_body"}, status=400)
             return
+        if route.path == "/api/embedding/test":
+            self._api_embedding_test(body)
+            return
+        if route.path != "/api/jobs":
+            self._send_json({"error": "not_found"}, status=404)
+            return
         job_id, status, message = _start_job(
             self.server, str(body.get("kind", "")), body.get("params") or {}
         )
@@ -287,6 +291,28 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": message}, status=status)
             return
         self._send_json({"id": job_id, "kind": body.get("kind")}, status=201)
+
+    def _api_embedding_test(self, body: dict[str, Any]) -> None:
+        """Probe the embedding service; accepts typed-but-unsaved form values."""
+        base_url = str(body.get("base_url") or "").strip() or None
+        model = str(body.get("model") or "").strip() or None
+        api_key = str(body.get("api_key") or "").strip() or None
+        client = EmbeddingClient(base_url, model, timeout=8)
+        if api_key:
+            client.api_key = api_key
+        start = time.perf_counter()
+        try:
+            vector = client.embed(["连接测试"])
+        except Exception as exc:  # noqa: BLE001 - probe reports, never raises
+            self._send_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]})
+            return
+        self._send_json({
+            "ok": True,
+            "latency_ms": round((time.perf_counter() - start) * 1000),
+            "dimension": int(vector.shape[1]),
+            "base_url": client.base_url,
+            "model": client.model,
+        })
 
     def _api_jobs_list(self) -> None:
         jobs = [
@@ -360,10 +386,13 @@ class _Handler(BaseHTTPRequestHandler):
         }})
 
     def _static_file(self, name: str) -> bytes:
+        # mtime invalidation: editing web/ no longer needs a server restart.
+        path = _WEB_DIR / name
         cache = self.server.static_cache
-        if name not in cache:
-            cache[name] = (_WEB_DIR / name).read_bytes()
-        return cache[name]
+        mtime = path.stat().st_mtime_ns
+        if cache.get(name, (0, b""))[0] != mtime:
+            cache[name] = (mtime, path.read_bytes())
+        return cache[name][1]
 
     def _api_stats(self) -> None:
         connection = open_db(self.server.db_path)
@@ -488,6 +517,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 class DTKWebServer(ThreadingHTTPServer):
     daemon_threads = True
+    # Windows 的 SO_REUSEADDR 允许两个服务静默双绑同一端口（旧进程未死时
+    # 新进程照常启动，请求被旧代码接走）；POSIX 保留它以快速重绑 TIME_WAIT。
+    allow_reuse_address = sys.platform != "win32"
 
     def __init__(
         self,
@@ -507,7 +539,7 @@ class DTKWebServer(ThreadingHTTPServer):
         self.research_index = research_index
         self.embedding_client = embedding_client
         self.intent_parser = intent_parser
-        self.static_cache: dict[str, bytes] = {}
+        self.static_cache: dict[str, tuple[int, bytes]] = {}
         self.vectors_path = vectors_path
         self.research_vectors_path = research_vectors_path
         self.jobs: dict[str, _Job] = {}

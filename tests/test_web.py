@@ -213,7 +213,7 @@ class WebApiTests(unittest.TestCase):
     def test_shared_stylesheet_served(self) -> None:
         status, body = self.request("/assets/app.css")
         self.assertEqual(status, 200)
-        self.assertIn("--color-paper", body)
+        self.assertIn("--surface", body)
 
     def test_stats_endpoint_reports_categories_and_assets(self) -> None:
         status, body = self.request("/api/stats")
@@ -284,6 +284,17 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(payload["exists"])
         self.assertEqual(payload["records"], [])
+
+    def test_embedding_test_reports_connection_failure(self) -> None:
+        status, body = self.request(
+            "/api/embedding/test",
+            method="POST",
+            body=json.dumps({"base_url": "http://127.0.0.1:9", "model": "stub"}),
+        )
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["error"])
 
     def test_update_check_unconfigured_reports_current(self) -> None:
         previous = os.environ.get("DTK_CONFIG")
