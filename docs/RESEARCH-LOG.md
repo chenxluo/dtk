@@ -252,3 +252,11 @@ unknown 共 14 个：
 | no_match 准确率 | 1.000 | **1.000** | 持平 |
 
 47 条正例仅剩 1 条失败(`en-from-below`:英文描述"camera looking up at the character" 未中 `from_below`,向量被 looking_* 家族分走)。中文查询(如"黑色鞋子"→`black_shoes`、"过膝袜"→`thighhighs`)现在直接命中 cn_name/联想词。知识层:`get_tag` 对 7,378 个原缺口标签返回官方 Wiki + other_names,中文译名覆盖 329,760 个标签。
+
+## 2026-11-13 · 夜间管线 + P4 研究:真缺 Wiki 的长尾标签
+
+夜间 enrich ≥1k 帖全量完成(6,085/6,085,0 失败;基准复测 MRR 0.881 / hit@1 0.830 / hit@5 0.936 / hit@10 0.979,no_match 1.0)。期间发现研究队列仍按快照列选目标、混入已官方同步的标签——已修复(`52e25ef`):队列排除 `upstream_wikis` 有正文的标签;另加 CLI 分发守卫测试(前一晚 `run_research` import 被覆盖导致夜链首步崩溃,`a354812` 修复)。
+
+修复后真目标 42 个(general/meta ≥100 帖,快照与官方线站均无 Wiki):**10 completed / 32 unknown / 0 failed,审计 invalid=0**(88 分钟,835k in tokens)。unknown 占 76% 属实——这批长尾(`moe2019`、`fake_ad`、各校服标签等)连萌娘/e621 都无权威条目,unknown 即正确答案。
+
+10 个发布候选(证据逐字校验通过):`symbol-only_commentary`、`game_cg`、`=_hair_ornament`、`sweaty_feet`、`ursus_empire_logo`、`arms_around_self`、`pink_frills`、`metadata_pun`、`qingming_sword`、`domain_expansion`。候选在 `out/research/buildout_true_missing.jsonl`,等待人工 `publish-research`。首轮混入冗余目标的运行保留在 `out/research/buildout_missing.jsonl`(49 条,其中官方已有 Wiki 的按"官方优先"不发布)。
