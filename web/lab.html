@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DTK · 高级</title>
+  <meta name="description" content="DTK 高级区：数据库统计、研究与维护入口。">
+  <script>try { const m = localStorage.getItem('dtk-mode'); if (m) document.documentElement.dataset.mode = m; } catch {}</script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/app.css">
+  <style>
+    /* Hallmark · continuation of the Ink system (see index.html stamps) · this page: the ledger reads its own books */
+    .lab-title { margin: var(--space-lg) 0 var(--space-2xs); }
+    .lab-status { min-height: 1lh; margin: var(--space-2xs) 0 var(--space-sm); color: var(--color-muted); font-size: var(--text-sm); }
+    .lab-status.error {
+      display: inline-block; padding: var(--space-sm) var(--space-md);
+      background: var(--color-paper-2); border: var(--rule-hair) solid var(--color-ink);
+      border-radius: 10px; color: var(--color-ink); font-weight: 600;
+    }
+    section { margin: var(--space-lg) 0; }
+    section h3 { margin: 0 0 var(--space-2xs); }
+    .table-wrap { overflow-x: auto; }
+    .stat-table { width: 100%; border-collapse: collapse; border-top: var(--rule-hair) solid var(--color-ink); }
+    .stat-table th {
+      padding-block: var(--space-2xs); border-bottom: var(--rule-hair) solid var(--color-rule);
+      font-size: var(--text-xs); font-weight: 400; color: var(--color-muted); text-align: right; white-space: nowrap;
+    }
+    .stat-table th:first-child { text-align: left; }
+    .stat-table td {
+      padding-block: var(--space-2xs); border-bottom: var(--rule-hair) solid var(--color-rule);
+      font-size: var(--text-sm); color: var(--color-ink-2); text-align: right;
+      font-family: var(--font-outlier); font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .stat-table td:first-child { text-align: left; font-family: var(--font-body); color: var(--color-ink); }
+    .stat-table .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: var(--space-2xs); background: var(--tag-color, var(--color-muted)); }
+    .stat-table tr.total td { color: var(--color-ink); font-weight: 600; border-bottom: none; }
+    .stat-rows { margin: 0; border-top: var(--rule-hair) solid var(--color-ink); }
+    .stat-rows .row {
+      display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: var(--space-sm);
+      padding-block: var(--space-2xs); border-bottom: var(--rule-hair) solid var(--color-rule);
+    }
+    .stat-rows dt { font-size: var(--text-sm); color: var(--color-muted); }
+    .stat-rows dd {
+      margin: 0; font-size: var(--text-sm); color: var(--color-ink); min-width: 0;
+      font-family: var(--font-outlier); font-variant-numeric: tabular-nums; overflow-wrap: break-word;
+    }
+    .stat-rows dd small { color: var(--color-muted); font-size: var(--text-xs); }
+    @media (max-width: 42.5rem) {
+      .stat-rows .row { grid-template-columns: 1fr; gap: var(--space-3xs); }
+    }
+    .lab-research { margin-top: var(--space-xl); }
+    .research-tools {
+      display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs);
+      margin-block: var(--space-2xs) var(--space-sm);
+      color: var(--color-muted); font-size: var(--text-sm);
+    }
+    .muted { color: var(--color-muted); }
+    .limit-label { display: inline-flex; align-items: center; gap: var(--space-2xs); }
+    .limit-label input {
+      width: 4.5rem; min-height: 2rem; padding: var(--space-3xs) var(--space-2xs);
+      font-family: var(--font-outlier); font-size: var(--text-sm); color: var(--color-ink);
+      background: var(--color-paper); border: var(--rule-hair) solid var(--color-muted); border-radius: 8px;
+    }
+    .primary-btn {
+      min-height: 2rem; padding: var(--space-2xs) var(--space-sm);
+      font-weight: 600; font-size: var(--text-sm); color: var(--color-paper);
+      background: var(--color-ink); border: var(--rule-hair) solid var(--color-ink); border-radius: 10px;
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out);
+    }
+    .primary-btn:hover { background: var(--color-ink-2); border-color: var(--color-ink-2); }
+    .primary-btn:active { background: var(--color-ink-2); }
+    .primary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .job-line { margin-block: var(--space-2xs) var(--space-sm); font-size: var(--text-sm); }
+    .job-line.error span:first-child { color: var(--color-ink); font-weight: 600; }
+    .job-log {
+      margin: var(--space-2xs) 0 0; padding: var(--space-sm);
+      max-height: 12rem; overflow-y: auto;
+      background: var(--color-paper-2); border-radius: var(--radius-card);
+      font-family: var(--font-outlier); font-size: var(--text-xs); line-height: 1.6;
+      color: var(--color-ink-2); white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .stat-table input[type="checkbox"] { accent-color: var(--color-accent); }
+    .stat-table td.issue { color: var(--color-ink); font-weight: 600; }
+    .lab-manage, .lab-update { margin-top: var(--space-lg); }
+    .manage-note { margin: 0 0 var(--space-2xs); font-size: var(--text-sm); color: var(--color-ink-2); font-weight: 600; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="shell header-row">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true" focusable="false">
+        <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <rect x="7.9" y="7.9" width="3" height="3" rx="0.7" fill="var(--color-accent)"/>
+        <line x1="12.7" y1="9.4" x2="16.5" y2="9.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="7.9" y1="13.2" x2="16.5" y2="13.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="7.9" y1="16" x2="14.3" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <h1>DTK 高级<small>statistics &amp; maintenance</small></h1>
+    </div>
+    <div class="header-tools">
+      <a class="quiet-btn" href="/">主页</a>
+      <button class="mode-toggle" id="mode-toggle" type="button">配色</button>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+  <h2 class="lab-title">统计</h2>
+  <p class="lab-status" id="lab-status" role="status" aria-live="polite">正在读取数据库…</p>
+
+  <section aria-label="词条规模">
+    <h3>词条规模</h3>
+    <div class="table-wrap">
+      <table class="stat-table" id="stat-categories">
+        <thead>
+          <tr><th scope="col">类别</th><th scope="col">词条</th><th scope="col">有 Wiki</th><th scope="col">Wiki 覆盖</th><th scope="col">中文名</th><th scope="col">中文翻译</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-label="数据资产">
+    <h3>数据资产</h3>
+    <dl class="stat-rows" id="stat-assets"></dl>
+  </section>
+
+  <section aria-label="快照信息">
+    <h3>快照信息</h3>
+    <dl class="stat-rows" id="stat-meta"></dl>
+  </section>
+
+  <section aria-label="文件">
+    <h3>文件</h3>
+    <dl class="stat-rows" id="stat-files"></dl>
+  </section>
+
+  <section class="lab-research" aria-label="研究流水线">
+    <h3>研究流水线</h3>
+    <div class="research-tools">
+      <button class="quiet-btn" id="queue-refresh" type="button">刷新队列</button>
+      <span class="muted" id="queue-info">队列未读取</span>
+      <label class="limit-label">数量
+        <input type="number" id="research-limit" min="1" max="200" value="10">
+      </label>
+      <button class="quiet-btn" id="research-run" type="button">启动研究</button>
+    </div>
+    <div class="job-line" id="job-line" hidden>
+      <span id="job-status"></span>
+      <pre class="job-log" id="job-log" hidden></pre>
+    </div>
+    <div class="research-tools">
+      <button class="quiet-btn" id="cand-refresh" type="button">刷新候选</button>
+      <button class="quiet-btn" id="cand-clean" type="button">全选合规</button>
+      <button class="primary-btn" id="cand-publish" type="button" disabled>审批发布选中</button>
+      <button class="quiet-btn" id="vectors-rebuild" type="button">重建研究向量</button>
+      <span class="muted" id="cand-info"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="stat-table" id="cand-table">
+        <thead>
+          <tr><th scope="col"></th><th scope="col">Tag</th><th scope="col">状态</th><th scope="col">证据</th><th scope="col">定义</th><th scope="col">问题</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="lab-manage" aria-label="数据库管理">
+    <h3>数据库管理</h3>
+    <p class="manage-note">以下操作直接写入本地数据库（联网操作从官方源拉取）。</p>
+    <div class="research-tools">
+      <button class="quiet-btn" id="job-rebuild-fts" type="button">重建 FTS 索引</button>
+      <button class="quiet-btn" id="job-import-implications" type="button">导入联动规则</button>
+      <button class="quiet-btn" id="job-import-wikis" type="button">补上游 Wiki</button>
+      <button class="quiet-btn" id="job-import-translations" type="button">导入中文翻译</button>
+      <button class="quiet-btn" id="job-check-upstream" type="button">对比线上快照</button>
+    </div>
+  </section>
+
+  <section class="lab-update" aria-label="数据更新">
+    <h3>数据更新</h3>
+    <div class="research-tools">
+      <button class="quiet-btn" id="update-check" type="button">检查更新</button>
+      <span class="muted" id="update-info">未检查</span>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+const modeToggle = document.getElementById('mode-toggle');
+const labStatus = document.getElementById('lab-status');
+const numberFormat = new Intl.NumberFormat('zh-CN');
+
+function currentModeDark() {
+  const mode = document.documentElement.dataset.mode;
+  return mode ? mode === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function applyModeLabel() {
+  modeToggle.textContent = currentModeDark() ? '亮色' : '暗色';
+}
+modeToggle.addEventListener('click', () => {
+  const next = currentModeDark() ? 'light' : 'dark';
+  document.documentElement.dataset.mode = next;
+  try { localStorage.setItem('dtk-mode', next); } catch {}
+  applyModeLabel();
+});
+
+const CATEGORY_COLORS = {
+  general: 'var(--general)', artist: 'var(--artist)', copyright: 'var(--copyright)',
+  character: 'var(--character)', meta: 'var(--meta)'
+};
+const ASSET_LABELS = {
+  aliases: '别名',
+  translations: '中文翻译词条',
+  implications: '官方联动规则',
+  upstream_wikis: '上游 Wiki 补充',
+  enrichment: '词条增强',
+  research_publications: '已发布研究定义',
+  research_documents: '研究语义文档',
+  research_evidence: '研究证据'
+};
+const META_LABELS = {
+  dtk_schema_version: 'Derived Store 版本',
+  import_started_at: '导入开始',
+  import_completed_at: '导入完成',
+  source_latest_post_id: '数据源最新 post',
+  source_latest_post_created_at: '数据源最新 post 时间',
+  implications_fetched_at: '联动规则拉取',
+  upstream_wikis_fetched_at: '上游 Wiki 拉取'
+};
+
+function makeElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function addRow(list, label, valueNode) {
+  const row = makeElement('div', 'row');
+  row.append(makeElement('dt', '', label), makeElement('dd', '', valueNode));
+  list.append(row);
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function renderCategories(categories) {
+  const body = document.querySelector('#stat-categories tbody');
+  const totals = {tags: 0, with_wiki: 0, with_cn_name: 0, with_translation: 0};
+  categories.forEach((category) => {
+    const row = makeElement('tr');
+    const name = makeElement('td');
+    const swatch = makeElement('span', 'sw');
+    swatch.style.setProperty('--tag-color', CATEGORY_COLORS[category.type] || 'var(--color-muted)');
+    name.append(swatch, category.type);
+    const coverage = category.tags ? `${((category.with_wiki / category.tags) * 100).toFixed(1)}%` : '—';
+    row.append(
+      name,
+      makeElement('td', '', numberFormat.format(category.tags)),
+      makeElement('td', '', numberFormat.format(category.with_wiki)),
+      makeElement('td', '', coverage),
+      makeElement('td', '', numberFormat.format(category.with_cn_name)),
+      makeElement('td', '', numberFormat.format(category.with_translation))
+    );
+    body.append(row);
+    for (const key of Object.keys(totals)) totals[key] += category[key];
+  });
+  const total = makeElement('tr', 'total');
+  total.append(
+    makeElement('td', '', '合计'),
+    makeElement('td', '', numberFormat.format(totals.tags)),
+    makeElement('td', '', numberFormat.format(totals.with_wiki)),
+    makeElement('td', '', totals.tags ? `${((totals.with_wiki / totals.tags) * 100).toFixed(1)}%` : '—'),
+    makeElement('td', '', numberFormat.format(totals.with_cn_name)),
+    makeElement('td', '', numberFormat.format(totals.with_translation))
+  );
+  body.append(total);
+}
+
+async function loadStats() {
+  try {
+    const response = await fetch('/api/stats');
+    const stats = await response.json();
+    if (!response.ok) throw new Error(stats.error || '读取统计失败');
+    labStatus.textContent = '';
+    renderCategories(stats.categories);
+
+    const assets = document.getElementById('stat-assets');
+    assets.replaceChildren();
+    for (const [key, label] of Object.entries(ASSET_LABELS)) {
+      if (stats.assets[key] === undefined) continue;
+      addRow(assets, label, numberFormat.format(stats.assets[key]));
+    }
+
+    const meta = document.getElementById('stat-meta');
+    meta.replaceChildren();
+    for (const [key, label] of Object.entries(META_LABELS)) {
+      const value = stats.meta[key];
+      if (value === null || value === undefined) continue;
+      addRow(meta, label, String(value));
+    }
+
+    const files = document.getElementById('stat-files');
+    files.replaceChildren();
+    stats.files.forEach((file) => {
+      const dd = makeElement('dd', '', formatBytes(file.bytes));
+      if (file.detail) dd.append(makeElement('small', '', ` · ${file.detail}`));
+      const row = makeElement('div', 'row');
+      row.append(makeElement('dt', '', file.name), dd);
+      files.append(row);
+    });
+  } catch (error) {
+    labStatus.classList.add('error');
+    labStatus.textContent = error.message;
+  }
+}
+
+applyModeLabel();
+loadStats();
+
+const queueInfo = document.getElementById('queue-info');
+const jobLine = document.getElementById('job-line');
+const jobStatusText = document.getElementById('job-status');
+const jobLog = document.getElementById('job-log');
+const candInfo = document.getElementById('cand-info');
+const candPublish = document.getElementById('cand-publish');
+const JOB_LABELS = {research: '研究', publish: '审批发布', embed_research: '重建研究向量'};
+let pollTimer = null;
+
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || '请求失败');
+  return result;
+}
+
+function pollJob(jobId, onDone) {
+  clearInterval(pollTimer);
+  jobLine.hidden = false;
+  jobLine.classList.remove('error');
+  jobLog.hidden = true;
+  pollTimer = setInterval(async () => {
+    try {
+      const response = await fetch(`/api/jobs/${jobId}`);
+      const detail = await response.json();
+      const elapsed = detail.finished_at
+        ? `${(detail.finished_at - detail.started_at).toFixed(1)}s`
+        : `${(performance.now() / 1000).toFixed(0)}s+`;
+      jobStatusText.textContent = `${JOB_LABELS[detail.kind] || detail.kind}：${detail.status === 'running' ? '运行中' : detail.status === 'done' ? '完成' : '失败'} · ${elapsed}`;
+      if (detail.log.length) {
+        jobLog.hidden = false;
+        jobLog.textContent = detail.log.slice(-8).join('\n');
+        jobLog.scrollTop = jobLog.scrollHeight;
+      }
+      if (detail.status !== 'running') {
+        clearInterval(pollTimer);
+        if (detail.status === 'error') jobLine.classList.add('error');
+        onDone(detail);
+      }
+    } catch {
+      clearInterval(pollTimer);
+      jobLine.classList.add('error');
+      jobStatusText.textContent = '任务状态读取失败';
+    }
+  }, 1000);
+}
+
+async function refreshQueue() {
+  queueInfo.textContent = '读取中…';
+  try {
+    const response = await fetch('/api/research/queue?limit=20');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '读取失败');
+    const preview = payload.units.slice(0, 5).map((unit) => `${unit.tag}（${numberFormat.format(unit.post_count)} 图）`).join('、');
+    queueInfo.textContent = payload.units.length
+      ? `队列前 ${payload.units.length}：${preview}${payload.units.length > 5 ? ' …' : ''}`
+      : '队列为空：没有待研究词条';
+  } catch (error) {
+    queueInfo.textContent = `读取失败：${error.message}`;
+  }
+}
+document.getElementById('queue-refresh').addEventListener('click', refreshQueue);
+
+document.getElementById('research-run').addEventListener('click', async () => {
+  const limit = Math.min(Math.max(parseInt(document.getElementById('research-limit').value, 10) || 10, 1), 200);
+  try {
+    const {id} = await postJson('/api/jobs', {kind: 'research', params: {limit}});
+    pollJob(id, () => refreshCandidates());
+  } catch (error) {
+    jobLine.hidden = false;
+    jobLine.classList.add('error');
+    jobStatusText.textContent = error.message;
+  }
+});
+
+function selectable(record) {
+  return record.status === 'completed' && record.evidence_verified && !record.issues.length;
+}
+
+function updatePublishButton() {
+  const checked = document.querySelectorAll('#cand-table input:checked').length;
+  candPublish.disabled = !checked;
+  candPublish.textContent = checked ? `审批发布选中（${checked}）` : '审批发布选中';
+}
+
+async function refreshCandidates() {
+  try {
+    const response = await fetch('/api/research/candidates');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '读取失败');
+    const body = document.querySelector('#cand-table tbody');
+    body.replaceChildren();
+    if (!payload.exists) {
+      candInfo.textContent = '尚无候选文件（out/research/missing_wiki.jsonl）';
+      return;
+    }
+    candInfo.textContent = `候选 ${payload.records.length} 条 · 审计问题 ${payload.audit.issue_count} 条`;
+    payload.records.forEach((record) => {
+      const row = makeElement('tr');
+      const check = makeElement('td');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.dataset.tag = record.tag;
+      if (!selectable(record)) input.disabled = true;
+      input.addEventListener('change', updatePublishButton);
+      check.append(input);
+      row.append(
+        check,
+        makeElement('td', '', record.tag),
+        makeElement('td', '', record.status || '—'),
+        makeElement('td', '', record.evidence_verified ? '已验证' : '未验证'),
+        makeElement('td', '', record.definition_zh || '—'),
+        makeElement('td', record.issues.length ? 'issue' : '', record.issues.length ? String(record.issues.length) : '')
+      );
+      body.append(row);
+    });
+    updatePublishButton();
+  } catch (error) {
+    candInfo.textContent = `读取失败：${error.message}`;
+  }
+}
+document.getElementById('cand-refresh').addEventListener('click', refreshCandidates);
+
+document.getElementById('cand-clean').addEventListener('click', () => {
+  document.querySelectorAll('#cand-table input:not(:disabled)').forEach((input) => {
+    input.checked = true;
+  });
+  updatePublishButton();
+});
+
+candPublish.addEventListener('click', async () => {
+  const tags = Array.from(document.querySelectorAll('#cand-table input:checked')).map((input) => input.dataset.tag);
+  if (!tags.length) return;
+  try {
+    const {id} = await postJson('/api/jobs', {kind: 'publish', params: {tags}});
+    pollJob(id, () => {
+      refreshCandidates();
+      loadStats();
+    });
+  } catch (error) {
+    jobLine.hidden = false;
+    jobLine.classList.add('error');
+    jobStatusText.textContent = error.message;
+  }
+});
+
+document.getElementById('vectors-rebuild').addEventListener('click', async () => {
+  try {
+    const {id} = await postJson('/api/jobs', {kind: 'embed_research', params: {}});
+    pollJob(id, () => loadStats());
+  } catch (error) {
+    jobLine.hidden = false;
+    jobLine.classList.add('error');
+    jobStatusText.textContent = error.message;
+  }
+});
+
+refreshQueue();
+refreshCandidates();
+
+for (const [buttonId, kind] of [
+  ['job-rebuild-fts', 'rebuild_fts'],
+  ['job-import-implications', 'import_implications'],
+  ['job-import-wikis', 'import_wikis'],
+  ['job-import-translations', 'import_translations'],
+  ['job-check-upstream', 'check_upstream']
+]) {
+  document.getElementById(buttonId).addEventListener('click', async () => {
+    try {
+      const {id} = await postJson('/api/jobs', {kind, params: {}});
+      pollJob(id, () => loadStats());
+    } catch (error) {
+      jobLine.hidden = false;
+      jobLine.classList.add('error');
+      jobStatusText.textContent = error.message;
+    }
+  });
+}
+
+document.getElementById('update-check').addEventListener('click', async () => {
+  const info = document.getElementById('update-info');
+  info.textContent = '检查中…';
+  try {
+    const response = await fetch('/api/update/check');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '检查失败');
+    if (!payload.configured) {
+      info.textContent = `本地数据 ${payload.current}；未配置发布仓库（data/dtk.json 的 release_repo）`;
+      return;
+    }
+    const state = payload.update_available ? `有新版本：${payload.latest}` : `已是最新（${payload.latest || '远端无发布'}）`;
+    const assets = payload.assets.map((asset) => `${asset.name}（${formatBytes(asset.bytes)}）`).join('、');
+    info.textContent = `本地 ${payload.current} · ${state}${assets ? ` · ${assets}` : ''}`;
+  } catch (error) {
+    info.textContent = `检查失败：${error.message}`;
+  }
+});
+</script>
+</body>
+</html>

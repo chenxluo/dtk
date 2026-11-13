@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 from .cache import write_json_atomic
+from ..config import load_config
 
 RETRY_DELAYS = (0, 2, 10)
 
@@ -33,7 +34,7 @@ class ResearchLLMClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.api_key = api_key or os.environ.get("DTK_RESEARCH_LLM_API_KEY")
+        self.api_key = api_key or load_config()["research_llm_api_key"]
         self.cache_dir = Path(cache_dir) / "llm" if cache_dir else None
         self.timeout = timeout
         self.disable_thinking = disable_thinking
@@ -49,7 +50,7 @@ class ResearchLLMClient:
     ) -> tuple[str, dict[str, int], bool]:
         headers = {"Content-Type": "application/json"}
         try:
-            headers.update(json.loads(os.environ.get("DTK_RESEARCH_LLM_HEADERS") or "{}"))
+            headers.update(load_config()["research_llm_headers"])
         except ValueError:
             pass
         if self.api_key:
@@ -64,7 +65,7 @@ class ResearchLLMClient:
         if self.disable_thinking:
             payload.setdefault("chat_template_kwargs", {"enable_thinking": False})
         try:
-            payload.update(json.loads(os.environ.get("DTK_RESEARCH_LLM_BODY") or "{}"))
+            payload.update(load_config()["research_llm_body"])
         except ValueError:
             pass
 

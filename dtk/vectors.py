@@ -20,12 +20,15 @@ DEFAULT_LM_BASE_URL = "http://127.0.0.1:6001/v1"
 _CHUNK_SIZE = 4096
 
 
+from .config import load_config
+
+
 def default_embedding_model() -> str:
-    return os.environ.get("DTK_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
+    return load_config()["embedding_model"]
 
 
 def default_lm_base_url() -> str:
-    return os.environ.get("DTK_LLM_BASE_URL", DEFAULT_LM_BASE_URL)
+    return load_config()["embedding_base_url"]
 
 
 class EmbeddingClient:
@@ -40,7 +43,7 @@ class EmbeddingClient:
         self.base_url = (base_url or default_lm_base_url()).rstrip("/")
         self.model = model or default_embedding_model()
         self.timeout = timeout
-        self.api_key = os.environ.get("DTK_LLM_API_KEY")
+        self.api_key = load_config()["embedding_api_key"]
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         if not texts:

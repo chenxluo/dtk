@@ -5,11 +5,15 @@ import argparse
 import json
 import os
 import sys
+import subprocess
+import zipfile
 import time
 from pathlib import Path
 from typing import Any, Sequence
 
 from .evaluation import evaluate_file, load_benchmark
+from .config import load_config
+from .release import build_release
 from .intent import IntentClassifier
 from .mcp import StdioMCPServer, run_stdio
 from .relations import cooccurring_tags
@@ -41,26 +45,30 @@ from .vectors import (
 from .web import create_server
 
 
+def _config() -> dict:
+    return load_config()
+
+
 def _default_db() -> Path:
-    return Path(os.environ.get("DTK_DB", "data/dtk.db"))
+    return Path(_config()["db_path"])
 
 
 def _default_source() -> str | None:
-    return os.environ.get("DTK_SOURCE_DB")
+    return _config()["source_db_path"]
 
 
 def _default_vectors() -> Path:
-    return Path(os.environ.get("DTK_VECTORS", "data/dtk_vectors.npz"))
+    return Path(_config()["vectors_path"])
 
 def _default_research_model() -> str:
-    return os.environ.get("DTK_RESEARCH_MODEL", "qwen3.8-27b")
+    return _config()["research_model"]
 
 def _default_research_vectors() -> Path:
-    return Path(os.environ.get("DTK_RESEARCH_VECTORS", "data/research_vectors.npz"))
+    return Path(_config()["research_vectors_path"])
 
 
 def _default_searx_url() -> str:
-    return os.environ.get("DTK_SEARX_URL", "http://127.0.0.1:8989")
+    return _config()["searx_url"]
 
 
 def _key_file_config(path: str) -> dict[str, str]:
@@ -390,6 +398,21 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument("records")
     audit_parser.add_argument("--json", action="store_true")
 
+    release_build_parser = subparsers.add_parser(
+        "release-build", help="build data release artifacts (db zip + optional vectors zip)"
+    )
+    _add_db_argument(release_build_parser)
+    release_build_parser.add_argument("--vectors", default=str(_default_vectors()))
+    release_build_parser.add_argument("--research-vectors", default=str(_default_research_vectors()))
+    release_build_parser.add_argument("--out", default=_config()["release_out"])
+
+    release_publish_parser = subparsers.add_parser(
+        "release-publish", help="upload built artifacts to a GitHub Release via gh"
+    )
+    release_publish_parser.add_argument("--dist", default=_config()["release_out"])
+    release_publish_parser.add_argument("--repo", default=_config()["release_repo"])
+    release_publish_parser.add_argument("--notes", default="DTK data release")
+
     implications_parser = subparsers.add_parser(
         "import-implications", help="import official Danbooru Tag Implications"
     )
@@ -664,6 +687,49 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for issue in result["issues"]:
                     print(f"issue: {issue['tag']}: {'; '.join(issue['errors'])}")
             return 1 if result["invalid"] else 0
+
+        if args.command == "release-build":
+            manifest = build_release(
+                args.out,
+                db_path=args.db,
+                vectors_path=args.vectors,
+                research_vectors_path=args.research_vectors,
+            )
+            _print_json(manifest)
+            print(f"artifacts written to {args.out}")
+            return 0
+
+        if args.command == "release-publish":
+            if not args.repo:
+                raise ValueError("--repo is required (or set release_repo / DTK_RELEASE_REPO)")
+            dist = Path(args.dist)
+            files = sorted(
+                p for p in dist.iterdir()
+                if p.is_file() and (p.suffix == ".zip" or p.name == "SHA256SUMS.txt")
+            )
+            if not files:
+                raise FileNotFoundError(f"no release artifacts in {dist}; run release-build first")
+            versions = {json.loads(zipfile.ZipFile(p).read("manifest.json"))["version"] for p in files if p.suffix == ".zip"}
+            if len(versions) != 1:
+                raise ValueError(f"dist contains mixed versions: {sorted(versions)}")
+            tag = versions.pop()
+            completed = subprocess.run(
+                [
+                    "gh", "release", "create", tag,
+                    *(str(p) for p in files),
+                    "--repo", args.repo,
+                    "--title", tag,
+                    "--notes", args.notes,
+                ],
+                capture_output=True, text=True,
+            )
+            if completed.returncode != 0:
+                print(completed.stdout)
+                print(completed.stderr, file=sys.stderr)
+                raise RuntimeError(f"gh release create failed (exit {completed.returncode})")
+            print(completed.stdout.strip())
+            print(f"published {tag} to {args.repo} ({len(files)} files)")
+            return 0
 
         if args.command == "import-implications":
             result = import_implications(

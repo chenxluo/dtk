@@ -8,6 +8,7 @@ data/
 out/
 cache/
 logs/
+dist/
 
 # Secrets and local configuration
 .env

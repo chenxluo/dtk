@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- DTK mark: the ruled tag ledger; one accent square = category colour -->
+  <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="5" fill="#fcfbf9" stroke="#0e0e0e" stroke-width="1.8"/>
+  <rect x="7.9" y="7.9" width="3" height="3" rx="0.7" fill="#00807c"/>
+  <line x1="12.7" y1="9.4" x2="16.5" y2="9.4" stroke="#0e0e0e" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="7.9" y1="13.2" x2="16.5" y2="13.2" stroke="#0e0e0e" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="7.9" y1="16" x2="14.3" y2="16" stroke="#0e0e0e" stroke-width="1.8" stroke-linecap="round"/>
+</svg>
