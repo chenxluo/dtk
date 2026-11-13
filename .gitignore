@@ -9,7 +9,11 @@ out/
 cache/
 logs/
 dist/
+build-dist/
+build-work/
+installer/
 
+packaging/dtk-256.png
 # Secrets and local configuration
 .env
 .env.*

@@ -319,6 +319,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_argument(serve_parser)
     _add_vector_arguments(serve_parser)
 
+    gui_parser = subparsers.add_parser(
+        "gui", help="open the desktop window (pywebview shell over the local server)"
+    )
+    _add_db_argument(gui_parser)
+    _add_vector_arguments(gui_parser)
+
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap", help="download the latest data release into the local data dir"
+    )
+    bootstrap_parser.add_argument("--repo", default=_config()["release_repo"])
+    bootstrap_parser.add_argument("--no-vectors", action="store_true", help="skip the optional vectors pack")
+    bootstrap_parser.add_argument("--force", action="store_true", help="re-download even if data exists")
+
     mcp_parser = subparsers.add_parser(
         "mcp", help="serve read-only Tag tools over stdio MCP"
     )
@@ -850,6 +863,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("\nDTK web UI stopped")
             finally:
                 server.server_close()
+            return 0
+
+        if args.command == "gui":
+            from .gui import launch
+
+            launch(
+                db_path=args.db,
+                vectors_path=args.vectors or None,
+                research_vectors_path=args.research_vectors,
+            )
+            return 0
+
+        if args.command == "bootstrap":
+            from .bootstrap import bootstrap_data
+
+            result = bootstrap_data(
+                repo=args.repo,
+                include_vectors=not args.no_vectors,
+                force=args.force,
+            )
+            _print_json(result)
             return 0
 
         if args.command == "mcp":
