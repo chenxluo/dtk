@@ -341,6 +341,7 @@ async function loadTagDetail(name, container, button) {
         detailText += `\n证据：\n${record.research.evidence.map(item => `- ${item.quote}\n  ${item.url}`).join('\n')}\n`;
       }
       detailText += `\n发布时间：${record.research.published_at}\n`;
+    }
     if (record.cn_definition) {
       detailText += `\n中文定义：${record.cn_definition}\n`;
     }
@@ -436,10 +437,11 @@ async function runSearch(event) {
     const response = await fetch(`/api/search?${params}`);
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || '查询失败');
+    const degradedNote = result.degraded ? ' · 嵌入服务不可用，已跳过语义检索（检查 DTK_LLM_BASE_URL 配置）' : '';
     if (result.groups) {
       result.groups.forEach((group, index) => resultsList.append(renderGroup(group, index + 1)));
       const total = result.groups.reduce((sum, group) => sum + group.results.length, 0);
-      setBusy(`完成 · 分组 · ${result.groups.length} 组 · ${total} 条`);
+      setBusy(`完成 · 分组 · ${result.groups.length} 组 · ${total} 条${degradedNote}`);
       return;
     }
     const rows = result.results || [];
@@ -448,7 +450,7 @@ async function runSearch(event) {
       const empty = makeElement('li', 'empty', '当前快照没有匹配的 Tag。可以换一种画面描述，或直接输入英文 Tag。');
       resultsList.append(empty);
     }
-    setBusy(`完成 · ${matchLabels[result.matched_by] || result.matched_by} · 返回 ${rows.length} 条`);
+    setBusy(`完成 · ${matchLabels[result.matched_by] || result.matched_by} · 返回 ${rows.length} 条${degradedNote}`);
   } catch (error) {
     setError(error.message);
   }

@@ -54,12 +54,21 @@ class _Handler(BaseHTTPRequestHandler):
         query_vector = None
         query_vectors = None
         concepts = split_concepts(query)
+        degraded = False
         if vector_index is not None or research_index is not None:
-            vectors = self.server.embedding_client.embed(concepts)
-            if len(concepts) == 1:
-                query_vector = vectors[0]
+            try:
+                vectors = self.server.embedding_client.embed(concepts)
+            except Exception:
+                # Embedding service down: degrade this request to FTS instead of
+                # dropping the connection; retries next request (self-healing).
+                vector_index = None
+                research_index = None
+                degraded = True
             else:
-                query_vectors = dict(zip(concepts, vectors))
+                if len(concepts) == 1:
+                    query_vector = vectors[0]
+                else:
+                    query_vectors = dict(zip(concepts, vectors))
         try:
             connection = open_db(self.server.db_path)
             try:
@@ -91,6 +100,8 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as error:
             self._send_json({"error": f"search failed: {error}"}, status=500)
             return
+        if degraded:
+            result["degraded"] = True
         self._send_json(result)
 
     def _api_tag(self, params: dict[str, list[str]]) -> None:
@@ -202,6 +213,9 @@ def create_server(
         database,
         vector_index,
         research_index,
-        EmbeddingClient(lm_base_url, embedding_model),
+        # Short timeout: interactive queries must fall back to FTS quickly when
+        # the embedding service is unreachable (index builds use the long default).
+        # ponytail: fixed 10s; make it configurable if slow remote endpoints appear.
+        EmbeddingClient(lm_base_url, embedding_model, timeout=10.0),
         intent_parser,
     )

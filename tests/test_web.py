@@ -85,6 +85,59 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Danbooru Tag Knowledge", body)
         self.assertIn("角色直视观众", body)
 
+    def test_home_page_script_parses(self) -> None:
+        """One JS syntax error kills every listener (stuck '正在连接本地知识库…')."""
+        import re
+        import shutil
+        import subprocess
+
+        if shutil.which("node") is None:
+            self.skipTest("node not available")
+        _, body = self.request("/")
+        script = re.search(r"<script>(.*)</script>", body, re.S).group(1)
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as handle:
+            handle.write(script)
+            script_path = handle.name
+        try:
+            completed = subprocess.run(
+                ["node", "--check", script_path], capture_output=True, text=True
+            )
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_search_degrades_to_fts_when_embedding_service_down(self) -> None:
+        from dtk.vectors import EmbeddingClient
+        from dtk.web import DTKWebServer
+
+        class _StubIndex:
+            metadata = {"model": "stub", "tag_count": 1}
+
+        server = DTKWebServer(
+            ("127.0.0.1", 0),
+            self.server.db_path,
+            _StubIndex(),
+            None,
+            EmbeddingClient("http://127.0.0.1:9", timeout=0.5),
+            None,
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+            connection.request("GET", "/api/search?query=very%20long%20hair")
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            connection.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(payload["degraded"])
+        self.assertTrue(payload["results"])
+
 
 if __name__ == "__main__":
     unittest.main()
