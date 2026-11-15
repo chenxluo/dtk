@@ -17,6 +17,7 @@ from .release import build_release
 from .intent import IntentClassifier
 from .mcp import StdioMCPServer, run_stdio
 from .relations import cooccurring_tags
+from .search import get_tag, search, search_grouped, split_concepts
 from .store import build_database, database_info, open_db, rebuild_search_index
 from .research.audit import audit_research
 from .enrich import enrich_tags

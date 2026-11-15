@@ -260,3 +260,35 @@ unknown 共 14 个：
 修复后真目标 42 个(general/meta ≥100 帖,快照与官方线站均无 Wiki):**10 completed / 32 unknown / 0 failed,审计 invalid=0**(88 分钟,835k in tokens)。unknown 占 76% 属实——这批长尾(`moe2019`、`fake_ad`、各校服标签等)连萌娘/e621 都无权威条目,unknown 即正确答案。
 
 10 个发布候选(证据逐字校验通过):`symbol-only_commentary`、`game_cg`、`=_hair_ornament`、`sweaty_feet`、`ursus_empire_logo`、`arms_around_self`、`pink_frills`、`metadata_pun`、`qingming_sword`、`domain_expansion`。候选在 `out/research/buildout_true_missing.jsonl`,等待人工 `publish-research`。首轮混入冗余目标的运行保留在 `out/research/buildout_missing.jsonl`(49 条,其中官方已有 Wiki 的按"官方优先"不发布)。
+
+## 2026-11-15 · enrich 扩到 500–1k 帖 + P4 候选发布
+
+### enrich 500–1k 档全量
+
+3,026/3,026 全量完成,0 遗留(烟测 3 + 主批 2,920 + 502 重试 102 + `nico_nico_nii`);约 700k in / 400k out tokens。general/meta ≥100 帖四档中 ≥500 帖全部覆盖,剩 100–500 档 10,028 个未做。
+
+### P4 十候选发布
+
+人工逐条审核(定义、证据、本地别名核对)后全部显式发布:10 tag / 20 文档 / 11 证据;`research_publications` 总计 19,`embed-research` 重建为 45 文档。`symbol-only_commentary`、`=_hair_ornament`、`arms_around_self` 的定义如实转述 live 站别名关系,快照缺别名行时不迁移关系本身。general/meta 官方确认无 Wiki 的研究目标池至此清零;copyright 169 / character 62 / artist 99 留待范围决策。
+
+### 基准对比(50 条,带意图门控,同命令)
+
+| 指标 | ≥1k 基线 | 500–1k 后 | Δ |
+|---|---:|---:|---:|
+| MRR | 0.881 | 0.8809 | ≈0 |
+| hit@5 | 0.936 | 0.9362 | ≈0 |
+| hit@10 | 0.979 | 0.9787 | ≈0 |
+| no_match 准确率 | 1.0 | 1.0 | = |
+
+基准查询全部指向 ≥1k 帖标签,测不出本档收益;关键结论是 3,026 个新向量文档**未污染**现有查询。档内实测:`勒出小肚子` → `muffin_top` 第 1。
+
+### 修复
+
+1. `92ee1cb`(P4+P5)把 `from .search import` 整行弄丢,HEAD 上 `search`/`get` 两个命令 NameError;已恢复并给守卫测试补 `get_tag`/`search`/`search_grouped`/`split_concepts` 符号断言。
+2. enrich JSON 解析器:模型在定义里写颜文字(`\m/`)造成非法 escape,同类 tag 会被缓存命中卡死;解析前把孤立反斜杠翻倍(先消费合法转义单元再兜底)。
+
+### 运维
+
+- LM Studio 重启后 embedding 模型丢失 GPU offload,退化为全核 CPU 推理:显卡无占用但整机近卡死,杀 embed 即恢复。全量 embed 前先打稳态探针(单条 <0.1s 为健康,首条含冷启动)。
+- LM Studio 报 `tokenizer.ggml.add_eos_token should be true`:基线索引同约定构建,本轮保持一致以保基准可比;下次全量重建时连同 research 向量一起切换并复测。
+- Windows 下 MSYS `kill -0` 探不到原生 pid,进程监视要用文件信号(汇总 JSON 落盘)或 `tasklist`。

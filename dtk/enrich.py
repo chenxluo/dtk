@@ -42,6 +42,13 @@ _MAX_TERM_LENGTH = 40
 
 def _extract_json(text: str) -> dict[str, Any]:
     cleaned = re.sub(r"```(?:json)?|```", "", text).strip()
+    # emoticons like \m/ are invalid JSON escapes; double lone backslashes,
+    # consuming valid escape units (incl. \\ and \uXXXX) first so they stay intact
+    cleaned = re.sub(
+        r'(\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))|\\',
+        lambda m: m.group(1) or "\\\\",
+        cleaned,
+    )
     start, end = cleaned.find("{"), cleaned.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("no JSON object in response")

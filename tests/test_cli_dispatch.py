@@ -39,6 +39,12 @@ class CliDispatchSmokeTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(imp.called)
 
+    def test_query_handler_symbols_exist(self) -> None:
+        # get/search crashed at call time when their import line was
+        # overwritten during P4+P5 edits (2026-11-15)
+        for symbol in ("get_tag", "search", "search_grouped"):
+            self.assertTrue(hasattr(cli, symbol), f"dtk.cli lost handler symbol: {symbol}")
+
     def test_translations_import_symbol_exists(self) -> None:
         with mock.patch("dtk.cli.import_translations", return_value={"source_rows": 0, "matched": 0, "label": "x"}) as imp:
             with mock.patch("dtk.cli.Path"):
