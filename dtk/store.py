@@ -55,17 +55,21 @@ CREATE VIRTUAL TABLE tag_fts USING fts5(
 """
 
 _TAG_DETAILS_VIEW = """
-CREATE VIEW IF NOT EXISTS tag_details AS
+DROP VIEW IF EXISTS tag_details;
+CREATE VIEW tag_details AS
 SELECT
     t.id,
     t.name,
     t.lookup_key,
     t.type,
     t.post_count,
-    coalesce(u.body, t.wiki) AS wiki,
+    -- snapshot scrapes stored placeholders for missing wikis; treat as absent
+    coalesce(u.body, nullif(nullif(t.wiki, '[Error 404]'), 'nan')) AS wiki,
     CASE
         WHEN u.body IS NOT NULL THEN 'upstream'
-        WHEN t.wiki IS NOT NULL AND trim(t.wiki) <> '' THEN 'snapshot'
+        WHEN t.wiki IS NOT NULL
+             AND trim(t.wiki) <> ''
+             AND t.wiki NOT IN ('[Error 404]', 'nan') THEN 'snapshot'
     END AS wiki_source,
     tr.cn_name AS cn_name,
     u.other_names_json AS other_names_json,
@@ -175,7 +179,7 @@ def build_database(source: str | Path, destination: str | Path) -> dict[str, Any
                 lower(replace(s.tag, ' ', '_')),
                 coalesce(tt.name, 'unknown'),
                 coalesce(s.post_count, 0),
-                w.wiki_content
+                nullif(nullif(w.wiki_content, '[Error 404]'), 'nan')
             FROM src.tags s
             LEFT JOIN src.tag_types tt ON tt.id = s.type_id
             LEFT JOIN src.tag_wiki w ON w.tag_id = s.id
