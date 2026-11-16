@@ -292,3 +292,33 @@ unknown 共 14 个：
 - LM Studio 重启后 embedding 模型丢失 GPU offload,退化为全核 CPU 推理:显卡无占用但整机近卡死,杀 embed 即恢复。全量 embed 前先打稳态探针(单条 <0.1s 为健康,首条含冷启动)。
 - LM Studio 报 `tokenizer.ggml.add_eos_token should be true`:基线索引同约定构建,本轮保持一致以保基准可比;下次全量重建时连同 research 向量一起切换并复测。
 - Windows 下 MSYS `kill -0` 探不到原生 pid,进程监视要用文件信号(汇总 JSON 落盘)或 `tasklist`。
+
+## 2026-11-16 · 100–500 档夜跑、404 占位符出清与检索调优
+
+### 夜跑与占位符清洗
+
+夜间 enrich 100–500 档全量完成(10,028/10,028,0 失败;2.30M in / 1.33M out tokens,约 10 小时)。
+
+用户指正后核实:快照 Wiki 中 **233,654 条(70%)是占位符**——`[Error 404]` 195,632 条、字符串 `'nan'` 38,022 条;真实快照 Wiki 仅 102,115。占位符让这些 tag"看似有 Wiki",从未进入 P1 官方同步与研究队列(upstream 补救数为 0)。修复:导入路径归一为 NULL、现库一次性 UPDATE 233,654 行、`tag_details` 视图加 nullif 防线(view DDL 改 DROP+CREATE 保证已建库迁移)。
+
+出清后补同步:`import-wikis` 两轮共 4,795 候选,命中 3,598,官方确认无 Wiki 946。
+
+### 检索回归与调优(基准驱动)
+
+100–500 档联想词入索引后基准回归(hit@10 0.979→0.936:`ahoge` 被 `single_hair_intake` 等低帖复合词挤出、`hakama` 被颜色变体淹没)。两步修复:
+
+1. `RETRIEVAL_TERMS_MIN_POSTS = 500`:<500 帖的 enrich(terms+中文定义)仅知识层,不进 FTS/向量文档;get_tag 完整保留。
+2. `POPULARITY_PRIOR` 0.01→0.05:旧先验差值小于一个 RRF 名次步长,enrich 使 bm25 精确命中普遍化后,低帖 tag 双命中必然碾压高频单侧命中。0.05 同时修复遗留三周的 `en-from-below`。
+
+终态基准(50 条,意图门控):**MRR 0.9191 / hit@5 0.9574 / hit@10 1.0000 / no_match 1.0,零失败**(项目最优)。长尾路由无损:500–1k 档抽样 20 个 tag 用自身联想词查询,20/20 top-10、16/20 top-3。fixture 修正:`looking_at_viewer` 帖数从反现实的 10 万改为 340 万。
+
+### 最终覆盖(general/meta,≥100 帖,占位符出清后)
+
+| 档 | 总数 | enrich | wiki | 译名 |
+|---|---:|---:|---:|---:|
+| ≥10k | 2,634 | 2,634 | 2,630 | 2,590 |
+| 1k–10k | 6,085 | 6,085 | 6,057 | 5,940 |
+| 500–1k | 3,026 | 3,026 | 2,969 | 2,925 |
+| 100–500 | 10,028 | 10,028 | 8,820 | 9,711 |
+
+**enrich 四档全量 21,773/21,773 完成。** 新研究目标池(官方确认无 Wiki,≥100 帖):general 1,122、character 492、copyright 169、artist 99、meta 8——等范围决策后进研究队列。
