@@ -29,6 +29,16 @@ def build_research_queue(
         raise ValueError("types must contain general and/or meta")
 
     placeholders = ",".join("?" for _ in valid_types)
+    # published tags have no wiki by definition; skip re-researching them
+    # (table may be absent on fresh stores built before any publish)
+    published_filter = ""
+    if connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_publications'"
+    ).fetchone():
+        published_filter = (
+            " AND NOT EXISTS ("
+            "SELECT 1 FROM research_publications p WHERE p.tag_id = t.id)"
+        )
 
     rows = connection.execute(
         f"""
@@ -47,6 +57,7 @@ def build_research_queue(
                   SELECT 1 FROM upstream_wikis u
                   WHERE u.tag_id = t.id AND u.body IS NOT NULL
               )
+              {published_filter}
             ORDER BY t.post_count DESC, t.name
             LIMIT ?
         )
