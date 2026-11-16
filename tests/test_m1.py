@@ -39,7 +39,7 @@ class ImportAndSearchTests(unittest.TestCase):
         self.assertEqual(len(result["results"]), 1)
         self.assertEqual(result["results"][0]["tag"], "looking_at_viewer")
         self.assertEqual(result["results"][0]["type"], "general")
-        self.assertEqual(result["results"][0]["post_count"], 100000)
+        self.assertEqual(result["results"][0]["post_count"], 3400000)
 
     def test_ambiguous_alias_returns_every_candidate_by_usage(self) -> None:
         with self.derived_store() as conn:

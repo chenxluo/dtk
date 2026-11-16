@@ -13,7 +13,7 @@ from .vectors import VectorIndex
 
 # ponytail: fixed usage prior tuned on eval/benchmark.jsonl; make it a CLI
 # argument only if a future model/index needs a different value.
-POPULARITY_PRIOR = 0.01
+POPULARITY_PRIOR = 0.05
 RESEARCH_VECTOR_THRESHOLD = 0.65
 
 

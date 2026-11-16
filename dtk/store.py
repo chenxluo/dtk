@@ -85,7 +85,11 @@ _ADDITIVE_SCHEMA = (
     UPSTREAM_SCHEMA + TRANSLATIONS_SCHEMA + ENRICHMENT_SCHEMA + _TAG_DETAILS_VIEW
 )
 
-_FTS_INSERT = """
+# enrich 联想词/中文定义进入检索文档的最低帖数:<500 档的长尾复合词会在
+# bm25/向量上压过高频正确答案(2026-11-16 基准:ahoge/hakama 被变体挤掉),
+# 该档 enrich 仅保留在知识层(get_tag)。
+RETRIEVAL_TERMS_MIN_POSTS = 500
+_FTS_INSERT = f"""
 INSERT INTO tag_fts(tag_id, name, cn_name, aliases, other_names, terms, wiki)
 WITH alias_text(tag_id, aliases) AS (
     SELECT tag_id, group_concat(replace(alias, '_', ' '), char(10))
@@ -103,7 +107,7 @@ SELECT
     coalesce(tr.cn_name, ''),
     coalesce(a.aliases, ''),
     coalesce(o.names, ''),
-    coalesce(e.terms_json, ''),
+    case when t.post_count >= {RETRIEVAL_TERMS_MIN_POSTS} then coalesce(e.terms_json, '') else '' end,
     coalesce(u.body, t.wiki, '')
 FROM tags t
 LEFT JOIN alias_text a ON a.tag_id = t.id

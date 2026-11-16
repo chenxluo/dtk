@@ -12,7 +12,7 @@ from typing import Any, Callable, Sequence
 
 import numpy as np
 
-from .store import open_db
+from .store import RETRIEVAL_TERMS_MIN_POSTS, open_db
 
 VECTOR_SCHEMA_VERSION = 1
 DEFAULT_EMBEDDING_MODEL = "text-embedding-qwen3-embedding-4b"
@@ -215,7 +215,7 @@ def build_vector_index(
     try:
         tag_rows = conn.execute(
             """
-            SELECT id, name, wiki, cn_name, other_names_json, cn_definition, terms_json
+            SELECT id, name, wiki, cn_name, other_names_json, cn_definition, terms_json, post_count
             FROM tag_details
             WHERE type IN ('general', 'meta') AND post_count >= ?
             ORDER BY id
@@ -247,8 +247,12 @@ def build_vector_index(
             aliases.get(row["id"], []),
             cn_name=row["cn_name"],
             other_names=_json_list(row["other_names_json"]),
-            cn_definition=row["cn_definition"],
-            terms=_json_list(row["terms_json"]),
+            cn_definition=row["cn_definition"]
+            if row["post_count"] >= RETRIEVAL_TERMS_MIN_POSTS
+            else None,
+            terms=_json_list(row["terms_json"])
+            if row["post_count"] >= RETRIEVAL_TERMS_MIN_POSTS
+            else [],
         )
         for row in tag_rows
     ]

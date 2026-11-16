@@ -18,7 +18,7 @@ def make_source(path: Path) -> None:
             post_count INTEGER NOT NULL
         );
         INSERT INTO tags VALUES
-            (1, 'looking_at_viewer', 1, NULL, 100000),
+            (1, 'looking_at_viewer', 1, NULL, 3400000),
             (2, 'long_hair', 1, NULL, 50000),
             (3, 'hair_band', 1, NULL, 200),
             (4, 'hair_ornament', 1, NULL, 300),
