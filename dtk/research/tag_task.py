@@ -26,7 +26,7 @@ VERDICT_SCHEMA: dict[str, Any] = {
                         "enum": ["visual", "synonym", "contextual", "disambiguation"],
                     },
                     "language": {"type": "string", "enum": ["zh", "en"]},
-                    "text": {"type": "string", "minLength": 4},
+                    "text": {"type": "string", "minLength": 2},  # zh terms: 火箭靴=3 chars
                 },
             },
         },
