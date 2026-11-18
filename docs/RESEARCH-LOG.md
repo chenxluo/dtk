@@ -337,3 +337,7 @@ general/meta 官方确认无 Wiki 池(1,120 目标,队列已排除 19 个已发�
 
 - 研究队列排除 `research_publications`(存在性守卫,无该表的库跳过条件)。
 - `semantic_documents.text minLength` 4→2(中文词下限)。
+
+### Flagged 8 条人工复审(2026-11-18)
+
+7 条发布(floral_print_sleeves、glowing_hands、cracked_egg、tug、packet、hooded_jumpsuit、mole_beside_mouth):定义与引用证据逐字一致,快照无别名冲突。`habataki_academy_school_uniform` **不发布**:人工核查共现角色确认该 tag 属《心跳回忆》系列(羽丘学园,Habataki),而研究定义基于萌娘百科《BanG Dream!》羽丘女子学园(Haneoka)页面——学校实体错配,需带系列提示重研究。最终 `research_publications` 222,研究向量 467 文档。
