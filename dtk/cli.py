@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+import sqlite3
 import subprocess
 import zipfile
 import time
@@ -184,6 +185,31 @@ def _add_vector_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="skip TLS verification for LAN endpoints with self-signed certificates",
     )
+
+
+def _attach_entity_anchors(connection: sqlite3.Connection, units: list[dict[str, Any]]) -> None:
+    """Give entity-type research units co-occurrence anchors from the snapshot.
+
+    The habataki failure mode: a same-name school in the wrong franchise
+    anchors the definition. Top co-occurring character/copyright tags pin
+    the entity to its actual series before the model searches.
+    """
+    entity_units = [u for u in units if u.get("type") in ("character", "copyright", "artist")]
+    for unit in entity_units:
+        try:
+            related = cooccurring_tags(
+                connection,
+                unit["tag"],
+                limit=12,
+                min_count=5,
+                cache_dir="cache/cooccurrence",
+                other_types=("character", "copyright"),
+            )
+            anchors = [f"{r['tag']} ({r['post_count']}帖)" for r in related.get("results", [])]
+        except (OSError, ValueError, sqlite3.Error):
+            anchors = []  # snapshot missing: anchors are best-effort context
+        if anchors:
+            unit["entity_anchors"] = anchors
 
 
 def _vector_state(
@@ -538,7 +564,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 value.strip() for value in args.types.split(",") if value.strip()
             )
             if not selected_types:
-                raise ValueError("--types must contain general and/or meta")
+                raise ValueError("--types must name at least one tag type")
             connection = open_db(args.db)
             try:
                 if args.tag:
@@ -550,6 +576,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         min_post_count=args.min_post_count,
                         types=selected_types,
                     )
+                    _attach_entity_anchors(connection, units)
             finally:
                 connection.close()
             if args.dry_run:

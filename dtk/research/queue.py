@@ -21,12 +21,12 @@ def build_research_queue(
     if min_post_count < 0:
         raise ValueError("min_post_count must not be negative")
     requested = tuple(type_name for type_name in types if isinstance(type_name, str))
-    invalid = set(requested) - {"general", "meta"}
+    invalid = set(requested) - {"general", "meta", "character", "copyright", "artist"}
     if invalid:
         raise ValueError(f"unsupported research tag types: {sorted(invalid)}")
     valid_types = tuple(dict.fromkeys(requested))
     if not valid_types:
-        raise ValueError("types must contain general and/or meta")
+        raise ValueError("types must not be empty")
 
     placeholders = ",".join("?" for _ in valid_types)
     # published tags have no wiki by definition; skip re-researching them

@@ -550,7 +550,7 @@ class ResearchEngineTests(unittest.TestCase):
 
     def test_queue_rejects_unknown_tag_type(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported research tag types"):
-            build_research_queue(self.connection, types=("general", "artist"))
+            build_research_queue(self.connection, types=("general", "bogus"))
 
     def test_explicit_tag_bypasses_usage_threshold(self) -> None:
         from dtk.research.queue import explicit_research_units

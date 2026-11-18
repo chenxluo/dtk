@@ -19,10 +19,17 @@ def cooccurring_tags(
     limit: int = 20,
     min_count: int = 20,
     cache_dir: str | Path | None = None,
+    other_types: tuple[str, ...] = ("general", "meta"),
 ) -> dict[str, Any]:
-    """Find General/Meta co-occurrences ranked by Lift, not raw popularity."""
+    """Find co-occurrences ranked by Lift, not raw popularity.
+
+    other_types selects the co-occurring pool: general/meta for visual
+    facets, character/copyright for entity anchoring (research prompts).
+    """
     if limit <= 0 or min_count < 1:
         raise ValueError("limit and min_count must be positive")
+    if not other_types:
+        raise ValueError("other_types must not be empty")
 
     lookup_key = normalize_name(tag)
     target = connection.execute(
@@ -51,6 +58,7 @@ def cooccurring_tags(
                 "tag": target["name"],
                 "limit": limit,
                 "min_count": min_count,
+                "other_types": list(other_types),
                 "source_path": str(source),
                 "source_size_bytes": info.get("source_size_bytes"),
                 "source_mtime": info.get("source_mtime"),
@@ -76,8 +84,9 @@ def cooccurring_tags(
         ).fetchone()[0]
         if total_posts == 0:
             return {"tag": target["name"], "matched_by": "no_match", "results": []}
+        type_placeholders = ",".join("?" for _ in other_types)
         rows = connection.execute(
-            """
+            f"""
             SELECT
                 other.id AS tag_id,
                 other.name AS tag,
@@ -88,11 +97,11 @@ def cooccurring_tags(
             JOIN tags other ON other.id = q.tag_id
             WHERE p.tag_id = ?
               AND q.tag_id != ?
-              AND other.type IN ('general', 'meta')
+              AND other.type IN ({type_placeholders})
             GROUP BY q.tag_id, other.name, other.post_count
             HAVING COUNT(*) >= ?
             """,
-            (target["id"], target["id"], min_count),
+            (target["id"], target["id"], *other_types, min_count),
         ).fetchall()
     finally:
         connection.execute("DETACH DATABASE post_snapshot")

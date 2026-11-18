@@ -112,12 +112,22 @@ class TagResearchTask:
             "official_wiki": unit["wiki"],
             "aliases": unit["aliases"],
         }
+        anchors = unit.get("entity_anchors") or []
+        anchor_block = ""
+        if anchors:
+            anchor_block = (
+                "快照共现锚定（该 Tag 实际同框的角色/作品，用于确认所属系列与实体，"
+                "防止同名异作错配；不要把锚定词当作定义来源，定义仍需外部证据）：\n"
+                + "\n".join(f"- {a}" for a in anchors)
+                + "\n"
+            )
         return (
             "研究以下 Danbooru Tag 的视觉含义，产出中文定义和中文/英文检索表达。\n"
             "输出 JSON：status=completed 仅当有可逐字引用的外部证据；否则 status=unknown。\n"
             f"可能的 Danbooru Wiki URL（本站可能不可用）：https://danbooru.donmai.us/wiki_pages/{unit['tag']}\n"
             f"可参考的跨站 Wiki URL（非官方权威，需判断语义是否一致）：https://e621.net/wiki_pages/{unit['tag']}\n"
-            "优先二次元来源：萌娘百科(moegirl.org.cn)、pixiv 百科(dic.pixiv.net)、动漫 Fandom Wiki；"
+            + anchor_block
+            + "优先二次元来源：萌娘百科(moegirl.org.cn)、pixiv 百科(dic.pixiv.net)、动漫 Fandom Wiki；"
             "多义词必须先确认其二次元义项。\n"
             "completed 要求：definition_zh 至少 20 个字符；semantic_documents 至少 1 条；"
              "evidence 至少 1 条且 quote 逐字来自已抓取网页。"
