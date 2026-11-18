@@ -322,3 +322,18 @@ unknown 共 14 个：
 | 100–500 | 10,028 | 10,028 | 8,820 | 9,711 |
 
 **enrich 四档全量 21,773/21,773 完成。** 新研究目标池(官方确认无 Wiki,≥100 帖):general 1,122、character 492、copyright 169、artist 99、meta 8——等范围决策后进研究队列。
+
+## 2026-11-18 · 无 Wiki 池全量研究与批量发布
+
+### 运行
+
+general/meta 官方确认无 Wiki 池(1,120 目标,队列已排除 19 个已发布 tag——队列此前会重复收录已发布目标,已修)。flash + Parallel MCP,31.5 小时,17.4M in tokens。收尾 8 个 failed 由两个问题造成:Parallel MCP 429 限流;语义文档 `text minLength 4` 拒绝中文三字词(`火箭靴`)——下限降为 2 后 6 个补齐。最终 **1,118/1,120:204 completed / 914 unknown / 2 确定性失败**(`elbow_spikes` 模型输出坏形状、`star_pin` quote 非逐字被反捏造护栏正确拒绝,缓存重放重试无效)。机械审计 invalid=0。
+
+### 人工分档发布
+
+204 个 completed 按证据来源分档(danbooru_only 78 / e621 系 95 / wiki_other 18 / 混合 6 / 自标疑问 8),人工批准批量发布非 flagged 的 **196 条**(406 文档 / 243 证据);8 条自标 unresolved_questions 暂缓待逐条审。`research_publications` 总计 215,`embed-research` 重建 451 文档。20 条定义含 live 站别名关系,按既定原则只发布定义文本、不迁移关系。
+
+### 顺手修复
+
+- 研究队列排除 `research_publications`(存在性守卫,无该表的库跳过条件)。
+- `semantic_documents.text minLength` 4→2(中文词下限)。
