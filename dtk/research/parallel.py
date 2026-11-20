@@ -126,7 +126,7 @@ class ParallelSearchClient:
                 if error.code in (408, 429) or 500 <= error.code < 600:
                     continue
                 break  # bad request or auth: retrying cannot help
-            except (urllib.error.URLError, TimeoutError, ValueError) as error:
+            except (urllib.error.URLError, TimeoutError, ValueError, OSError) as error:
                 last_error = repr(error)
         print(
             f"[research] parallel gave up on {query!r}: {last_error}",
@@ -307,7 +307,7 @@ class ParallelMCPSearchClient:
                 if error.code == 429 or 500 <= error.code < 600:
                     continue
                 break
-            except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError) as error:
+            except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError, OSError) as error:
                 last_error = repr(error)[:200]
                 self.session_id = None
         print(

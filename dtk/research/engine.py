@@ -317,16 +317,22 @@ def run_research(
         }
         started = time.monotonic()
         for unit in todo:
-            record = _run_unit(
-                task,
-                unit,
-                destination,
-                llm,
-                search,
-                fetcher,
-                max_acts=max_acts,
-                top_n=top_n,
-            )
+            try:
+                record = _run_unit(
+                    task,
+                    unit,
+                    destination,
+                    llm,
+                    search,
+                    fetcher,
+                    max_acts=max_acts,
+                    top_n=top_n,
+                )
+            except Exception as error:  # noqa: BLE001 - per-unit isolation
+                # a transport error mid-unit must not kill a multi-hour run
+                print(f"[research] unit {unit.get('key')!r} crashed: {error!r}", file=sys.stderr)
+                stats["units_failed"] += 1
+                continue
             if record is None or record.get("status") == "failed":
                 stats["units_failed"] += 1
             else:
