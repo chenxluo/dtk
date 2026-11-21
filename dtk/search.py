@@ -17,6 +17,20 @@ POPULARITY_PRIOR = 0.05
 RESEARCH_VECTOR_THRESHOLD = 0.65
 
 
+def _research_match_bonus(cosine: float | None) -> float:
+    """Strong published-research matches outrank the popularity prior.
+
+    A 3-decade post-count gap costs ~0.02 in prior, more than one RRF stream
+    is worth, so niche research tags never surfaced. The ramp is 0 at the
+    (pollution-calibrated) threshold and reaches 2x POPULARITY_PRIOR at
+    cosine 1.0: strong matches float, threshold-adjacent ones stay put.
+    """
+    if cosine is None:
+        return 0.0
+    ramp = (cosine - RESEARCH_VECTOR_THRESHOLD) / (1.0 - RESEARCH_VECTOR_THRESHOLD)
+    return 2.0 * POPULARITY_PRIOR * max(0.0, min(1.0, ramp))
+
+
 
 def normalize_name(value: str) -> str:
     """Normalize user input for Danbooru name lookup."""
@@ -177,6 +191,10 @@ def search(
         )
     if vector_index is not None:
         vector_hits.extend(vector_index.find(query_vector, candidate_limit))
+    # research and official hits compete on cosine, not stream origin:
+    # prepending research hits let threshold-adjacent docs (0.65) outrank
+    # strong official matches (0.9) and displaced correct answers
+    vector_hits.sort(key=lambda hit: -hit[1])
     if not full_text_rows and not vector_hits:
         return {"query": query, "matched_by": "no_match", "results": []}
 
@@ -199,6 +217,7 @@ def search(
     rrf_scores: dict[int, float] = {}
     fts_by_id: dict[int, sqlite3.Row] = {}
     vector_score_by_id: dict[int, float] = {}
+    research_cosine: dict[int, float] = {}
     for rank, fts_row in enumerate(full_text_rows, 1):
         tag_id = fts_row["id"]
         fts_by_id[tag_id] = fts_row
@@ -206,6 +225,15 @@ def search(
     for rank, (tag_id, score) in enumerate(vector_hits, 1):
         vector_score_by_id[tag_id] = max(vector_score_by_id.get(tag_id, score), score)
         rrf_scores[tag_id] = rrf_scores.get(tag_id, 0.0) + 1.0 / (60 + rank)
+    if research_index is not None:
+        # record which hits came from the research index so strong matches can
+        # earn a cosine-ramped bonus below (merged stream loses that origin)
+        research_ids = {
+            tag_id for tag_id, score in research_index.find(query_vector, 10) if score >= RESEARCH_VECTOR_THRESHOLD
+        }
+        for tag_id in research_ids:
+            if tag_id in vector_score_by_id:
+                research_cosine[tag_id] = vector_score_by_id[tag_id]
 
     rows = _tags_by_ids(conn, list(rrf_scores))
     max_post_count = max(row["post_count"] for row in rows.values())
@@ -214,6 +242,7 @@ def search(
         + POPULARITY_PRIOR
         * math.log10(rows[tag_id]["post_count"] + 1)
         / math.log10(max_post_count + 1)
+        + _research_match_bonus(research_cosine.get(tag_id))
         for tag_id, score in rrf_scores.items()
     }
     ordered_ids = sorted(
