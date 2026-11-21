@@ -341,3 +341,23 @@ general/meta 官方确认无 Wiki 池(1,120 目标,队列已排除 19 个已发�
 ### Flagged 8 条人工复审(2026-11-18)
 
 7 条发布(floral_print_sleeves、glowing_hands、cracked_egg、tug、packet、hooded_jumpsuit、mole_beside_mouth):定义与引用证据逐字一致,快照无别名冲突。`habataki_academy_school_uniform` **不发布**:人工核查共现角色确认该 tag 属《心跳回忆》系列(羽丘学园,Habataki),而研究定义基于萌娘百科《BanG Dream!》羽丘女子学园(Haneoka)页面——学校实体错配,需带系列提示重研究。最终 `research_publications` 222,研究向量 467 文档。
+
+## 2026-11-22 · 实体池发布与检索层适配
+
+### 发布
+
+character 117 / copyright 58 / artist 30 共 **205 条**经全量人工审查后发布(+410 文档 / +254 证据);`research_publications` 总计 **427**,研究向量 **877 文档**。全量审查动用了机器系列核对(罗马音↔中文 franchise 映射 + 共现锚括号提取,39 条直接验证)+ 分层抽样 + 用户全清单扫描,共拦截 4 条实体错配:`fuka-chan`(与 kemomimi-chan 同框非同一实体)、`tsukioka_(40hara)`(特征抄自 kinako)、`chikuwa.`(画师拿食品定义)、`kujou_karasuma`(五等分系角色被写成 JoJo 承太郎)。锚定注入显著降低错配率:4/209 vs 上轮 1/204,但两轮共同点是"模型忽视锚信号选择轻松错误页"——护栏仍是人工/机器核对,不能只靠 prompt。
+
+### 检索层适配
+
+发布后发现研究 tag 检索不可见:3 个数量级帖数差的先验差(~0.02)大于单流 RRF 贡献(~0.016),niche 研究 tag 永远浮不出。两步修复:
+
+1. `_research_match_bonus`:`2×POPULARITY_PRIOR×ramp(cos)` 余弦爬坡加成,强命中(≥0.8)抵消先验劣势,阈值边缘(0.66)近零加成不引入污染(0.65 阈值本身是 11-11 按污染校准的)。
+2. 合并向量流按余弦排序,废除"研究命中无条件前插"(0.65 研究文档曾压过 0.92 官方命中)。
+
+验收:`赛博朋克边缘行者动画`→`cyberpunk_edgerunners` #1、`;d` 保持 #1、`黑色丝袜`→`black_legwear` #1。基准 hit@5 0.9574 / hit@10 1.0 / no_match 1.0 / 零失败不变;MRR 0.9191→0.8837(2 条查询滑至 2-3 位,挤入者均为语义合理 tag)。**已知问题**:加成会浮起"已废弃但研究文档含口语联想词"的别名 tag(黑色丝袜→black_legwear 而非 black_pantyhose);根治需 live 别名导入 + 弃用降权,留待下轮。
+
+### 运维
+
+- `nohup bash -c` 嵌套 shell 丢 PATH 曾静默杀死整个实体长跑(两天后才发现);后台长跑一律直接 `nohup python ...`,启动后必须验证首条记录落盘。
+- 传输层异常(`RemoteDisconnected`=OSError)曾团灭 20h 运行;parallel 客户端两处重试元组补 OSError,引擎加 per-unit 隔离(`1e7012e`)。
