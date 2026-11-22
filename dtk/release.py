@@ -25,13 +25,27 @@ def _model_slug(model: str) -> str:
 
 
 def local_version(db_path: str | Path) -> str:
-    """Version the data by its import timestamp, e.g. data-v2026.11.10-1530."""
+    """Version the data by its newest layer, e.g. data-v2026.11.22-0455.
+
+    Additive imports (research, wikis, aliases, deprecations) change the
+    derived store without touching the snapshot, so the version follows the
+    most recent layer timestamp, falling back to the snapshot import time.
+    """
     meta = _db_meta(db_path)
+    stamps = []
     try:
-        stamp = datetime.fromisoformat(meta.get("import_completed_at") or "")
+        stamps.append(datetime.fromisoformat(meta.get("import_completed_at") or ""))
     except ValueError:
+        pass
+    for key, value in meta.items():
+        if key.endswith("_fetched_at"):
+            try:
+                stamps.append(datetime.fromisoformat(value))
+            except ValueError:
+                continue
+    if not stamps:
         return "data-v0.unknown"
-    return f"data-v{stamp:%Y.%m.%d-%H%M}"
+    return f"data-v{max(stamps):%Y.%m.%d-%H%M}"
 
 
 def _db_meta(db_path: str | Path) -> dict[str, str]:
