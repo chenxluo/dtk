@@ -5,6 +5,7 @@ import json
 import math
 import re
 import sqlite3
+from typing import Mapping
 
 import numpy as np
 
@@ -15,6 +16,8 @@ from .vectors import VectorIndex
 # argument only if a future model/index needs a different value.
 POPULARITY_PRIOR = 0.05
 RESEARCH_VECTOR_THRESHOLD = 0.65
+# sinks deprecated tags below any live competitor (2x the max prior gain)
+DEPRECATION_PENALTY = 2 * POPULARITY_PRIOR
 
 
 def _research_match_bonus(cosine: float | None) -> float:
@@ -30,6 +33,32 @@ def _research_match_bonus(cosine: float | None) -> float:
     ramp = (cosine - RESEARCH_VECTOR_THRESHOLD) / (1.0 - RESEARCH_VECTOR_THRESHOLD)
     return 2.0 * POPULARITY_PRIOR * max(0.0, min(1.0, ramp))
 
+
+def _deprecated_candidate_ids(
+    conn: sqlite3.Connection, rows: Mapping[int, sqlite3.Row]
+) -> set[int]:
+    """Tag ids among candidates that Danbooru marks is_deprecated."""
+    exists = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'tag_deprecations'
+        """
+    ).fetchone()
+    if exists is None or not rows:
+        return set()
+    names = [row["name"] for row in rows.values()]
+    placeholders = ",".join("?" * len(names))
+    return {
+        int(row[0])
+        for row in conn.execute(
+            f"""
+            SELECT t.id FROM tag_deprecations d
+            JOIN tags t ON t.lookup_key = d.name
+            WHERE d.name IN ({placeholders})
+            """,
+            names,
+        )
+    }
 
 
 def normalize_name(value: str) -> str:
@@ -236,6 +265,11 @@ def search(
                 research_cosine[tag_id] = vector_score_by_id[tag_id]
 
     rows = _tags_by_ids(conn, list(rrf_scores))
+    deprecated_ids = _deprecated_candidate_ids(conn, rows)
+    for tag_id in deprecated_ids:
+        # deprecated tags cannot be applied to new posts; their research
+        # bonus and popularity prior no longer speak for them
+        research_cosine.pop(tag_id, None)
     max_post_count = max(row["post_count"] for row in rows.values())
     rank_scores = {
         tag_id: score
@@ -243,6 +277,7 @@ def search(
         * math.log10(rows[tag_id]["post_count"] + 1)
         / math.log10(max_post_count + 1)
         + _research_match_bonus(research_cosine.get(tag_id))
+        - (DEPRECATION_PENALTY if tag_id in deprecated_ids else 0.0)
         for tag_id, score in rrf_scores.items()
     }
     ordered_ids = sorted(
@@ -437,4 +472,47 @@ def get_tag(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
         "search_terms": terms,
         "research": _research_record(conn, row["id"]),
         "implications": _implication_record(conn, row["name"]),
+        "deprecated": _is_deprecated(conn, row["name"]),
+        "aliased_to": _alias_targets(conn, row["name"]),
     }
+
+
+def _is_deprecated(conn: sqlite3.Connection, name: str) -> bool:
+    exists = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'tag_deprecations'
+        """
+    ).fetchone()
+    if exists is None:
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM tag_deprecations WHERE name = ?",
+            (normalize_name(name),),
+        ).fetchone()
+        is not None
+    )
+
+
+def _alias_targets(conn: sqlite3.Connection, name: str) -> list[str]:
+    """Live Danbooru rename targets: use these instead of a deprecated tag."""
+    exists = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'tag_aliases'
+        """
+    ).fetchone()
+    if exists is None:
+        return []
+    return [
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT consequent FROM tag_aliases
+            WHERE antecedent = ? AND status = 'active'
+            ORDER BY consequent
+            """,
+            (name,),
+        )
+    ]

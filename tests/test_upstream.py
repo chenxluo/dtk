@@ -4,7 +4,7 @@ from pathlib import Path
 
 from dtk.search import get_tag
 from dtk.store import build_database, open_db
-from dtk.upstream import import_implications, upstream_status
+from dtk.upstream import import_aliases, import_deprecations, import_implications, upstream_status
 from tests.fixtures import make_source
 
 
@@ -49,6 +49,52 @@ class UpstreamTests(unittest.TestCase):
                 self.assertEqual(record["implications"], {"implies": ["hair_ornament"], "implied_by": []})
                 info = {row[0]: row[1] for row in conn.execute("SELECT key, value FROM meta")}
                 self.assertEqual(info["implication_count"], "3")
+            finally:
+                conn.close()
+
+    def test_aliases_and_deprecations_import_surface_in_get(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.db"
+            derived = Path(tmp) / "derived.db"
+            make_source(source)
+            build_database(source, derived)
+
+            alias_pages = [
+                _page([("hair_band", "hair_ornament"), ("peeing_on_viewer", "looking_at_viewer")]),
+                _page([("long_hair", "hair")], start_id=3),
+            ]
+            result = import_aliases(
+                derived,
+                page_size=2,
+                delay=0,
+                fetch_json=lambda url, timeout=30.0: (
+                    alias_pages[0] if "page=2" not in url else alias_pages[1]
+                ),
+            )
+            self.assertEqual(result["imported"], 3)
+
+            dep_pages = [[{"name": "hair_band"}, {"name": "long_hair"}], [{"name": "peeing_on_viewer"}]]
+            result = import_deprecations(
+                derived,
+                page_size=2,
+                delay=0,
+                fetch_json=lambda url, timeout=30.0: (
+                    dep_pages[0] if "page=2" not in url else dep_pages[1]
+                ),
+            )
+            self.assertEqual(result["imported"], 3)
+
+            conn = open_db(derived)
+            try:
+                record = get_tag(conn, "hair_band")
+                self.assertTrue(record["deprecated"])
+                self.assertEqual(record["aliased_to"], ["hair_ornament"])
+                live = get_tag(conn, "hair_ornament")
+                self.assertFalse(live["deprecated"])
+                self.assertEqual(live["aliased_to"], [])
+                info = {row[0]: row[1] for row in conn.execute("SELECT key, value FROM meta")}
+                self.assertEqual(info["alias_count"], "3")
+                self.assertEqual(info["deprecation_count"], "3")
             finally:
                 conn.close()
 

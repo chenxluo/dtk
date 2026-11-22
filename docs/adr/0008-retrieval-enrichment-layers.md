@@ -22,5 +22,5 @@ M2 检索把 Wiki 同时当作"知识文档"(给人/agent 看)和"检索文档"(
 ## 后果
 
 - 官方数据始终优先;研究只兜底"官方也无 Wiki"的标签。
-- 重建 Derived Store 后需重跑 import-implications / import-wikis / import-translations / rebuild-index(均为幂等增量导入)。
+- 重建 Derived Store 后需重跑 import-implications / import-aliases / import-deprecations / import-wikis / import-translations / rebuild-index(均为幂等增量导入)。
 - bm25 权重与 P3 层级由基准驱动调整,不拍脑袋。

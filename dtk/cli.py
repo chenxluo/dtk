@@ -35,7 +35,7 @@ from .research.publish import load_research_records, publish_research
 from .research.tag_task import TagResearchTask
 from .research.parallel import ParallelMCPSearchClient, ParallelSearchClient, load_parallel_key
 from .translations import FFDKJ_URL, fetch_ffdkj_sqlite, import_translations
-from .upstream import DEFAULT_BASE_URL as UPSTREAM_BASE_URL, import_implications, import_wikis, upstream_status
+from .upstream import DEFAULT_BASE_URL as UPSTREAM_BASE_URL, import_aliases, import_deprecations, import_implications, import_wikis, upstream_status
 from .vectors import (
     EmbeddingClient,
     VectorIndex,
@@ -136,6 +136,10 @@ def _print_tag(record: dict[str, Any]) -> None:
             print(f"  -> {tag}")
         for tag in record["implications"]["implied_by"]:
             print(f"  <- {tag}")
+    if record.get("deprecated"):
+        print("deprecated: true (cannot be applied to new posts)")
+    for target in record.get("aliased_to") or []:
+        print(f"aliased_to: {target}")
     print("wiki:")
     print(record["wiki"] or "(none)")
 
@@ -474,6 +478,22 @@ def build_parser() -> argparse.ArgumentParser:
     wikis_parser.add_argument("--delay", type=float, default=1.0)
     wikis_parser.add_argument("--json", action="store_true")
 
+    aliases_parser = subparsers.add_parser(
+        "import-aliases", help="import official Danbooru Tag Aliases (renames)"
+    )
+    _add_db_argument(aliases_parser)
+    aliases_parser.add_argument("--base-url", default=UPSTREAM_BASE_URL)
+    aliases_parser.add_argument("--status", default="active")
+    aliases_parser.add_argument("--delay", type=float, default=0.7)
+    aliases_parser.add_argument("--json", action="store_true")
+
+    deprecations_parser = subparsers.add_parser(
+        "import-deprecations", help="import names of tags Danbooru marks deprecated"
+    )
+    _add_db_argument(deprecations_parser)
+    deprecations_parser.add_argument("--base-url", default=UPSTREAM_BASE_URL)
+    deprecations_parser.add_argument("--delay", type=float, default=0.7)
+    deprecations_parser.add_argument("--json", action="store_true")
     translations_parser = subparsers.add_parser(
         "import-translations", help="import community Chinese tag-name translations"
     )
@@ -817,6 +837,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"checked {result['candidates']} tags: "
                     f"{result['hits']} wikis, {result['misses']} misses"
                 )
+            return 0
+
+        if args.command == "import-aliases":
+            result = import_aliases(
+                args.db,
+                base_url=args.base_url,
+                status=args.status,
+                delay=args.delay,
+            )
+            if args.json:
+                _print_json(result)
+            else:
+                print(
+                    f"imported {result['imported']} aliases "
+                    f"({result['pages']} pages, status={result['status']})"
+                )
+            return 0
+
+        if args.command == "import-deprecations":
+            result = import_deprecations(args.db, base_url=args.base_url, delay=args.delay)
+            if args.json:
+                _print_json(result)
+            else:
+                print(f"imported {result['imported']} deprecated names ({result['pages']} pages)")
             return 0
 
         if args.command == "check-upstream":

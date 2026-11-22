@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS tag_implications (
 );
 CREATE INDEX IF NOT EXISTS idx_implications_antecedent ON tag_implications(antecedent);
 CREATE INDEX IF NOT EXISTS idx_implications_consequent ON tag_implications(consequent);
+CREATE TABLE IF NOT EXISTS tag_aliases (
+    id INTEGER PRIMARY KEY,
+    antecedent TEXT NOT NULL,
+    consequent TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_aliases_antecedent ON tag_aliases(antecedent);
+CREATE INDEX IF NOT EXISTS idx_aliases_consequent ON tag_aliases(consequent);
+
+CREATE TABLE IF NOT EXISTS tag_deprecations (
+    name TEXT PRIMARY KEY,
+    fetched_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS upstream_wikis (
     tag_id INTEGER PRIMARY KEY,
@@ -64,20 +78,19 @@ def _fetch_json(url: str, timeout: float = 30.0) -> Any:
     raise RuntimeError(f"upstream fetch failed for {url}: {last_error}")
 
 
-def _implication_pages(
-    base_url: str,
-    status: str,
+def _api_pages(
+    path: str,
+    search: dict[str, str],
     page_size: int,
     delay: float,
     timeout: float,
     fetch_json: Callable[..., Any],
+    base_url: str = DEFAULT_BASE_URL,
 ):
     page = 1
     while True:
-        params = urllib.parse.urlencode(
-            {"limit": page_size, "page": page, "search[status]": status}
-        )
-        rows = fetch_json(f"{base_url}/tag_implications.json?{params}", timeout=timeout)
+        params = urllib.parse.urlencode({"limit": page_size, "page": page, **search})
+        rows = fetch_json(f"{base_url}{path}?{params}", timeout=timeout)
         if not isinstance(rows, list) or not rows:
             break
         yield rows
@@ -97,9 +110,13 @@ def _set_meta(connection: sqlite3.Connection, values: dict[str, Any]) -> None:
     )
 
 
-def import_implications(
+def _import_relation_table(
     db_path: str | Path,
     *,
+    endpoint: str,
+    table: str,
+    meta_prefix: str,
+    count_key: str,
     base_url: str = DEFAULT_BASE_URL,
     status: str = "active",
     page_size: int = 1000,
@@ -107,7 +124,7 @@ def import_implications(
     timeout: float = 30.0,
     fetch_json: Callable[..., Any] = _fetch_json,
 ) -> dict[str, Any]:
-    """Paginate the official Tag Implication API into an additive table."""
+    """Paginate an antecedent/consequent API (implications or aliases) into an additive table."""
     database = Path(db_path).resolve()
     if not database.is_file():
         raise FileNotFoundError(f"derived store not found: {database}")
@@ -116,10 +133,19 @@ def import_implications(
     connection = sqlite3.connect(database)
     try:
         connection.executescript(_SCHEMA)
-        for rows in _implication_pages(base_url, status, page_size, delay, timeout, fetch_json):
+        pages_iter = _api_pages(
+            endpoint,
+            {"search[status]": status},
+            page_size,
+            delay,
+            timeout,
+            fetch_json,
+            base_url=base_url,
+        )
+        for rows in pages_iter:
             connection.executemany(
-                """
-                INSERT OR REPLACE INTO tag_implications(
+                f"""
+                INSERT OR REPLACE INTO {table}(
                     id, antecedent, consequent, status, created_at
                 ) VALUES (?, ?, ?, ?, ?)
                 """,
@@ -140,11 +166,11 @@ def import_implications(
         _set_meta(
             connection,
             {
-                "implications_source": f"{base_url}/tag_implications.json",
-                "implications_status": status,
-                "implications_fetched_at": datetime.now(timezone.utc).isoformat(),
-                "implication_count": connection.execute(
-                    "SELECT COUNT(*) FROM tag_implications"
+                f"{meta_prefix}_source": f"{base_url}{endpoint}",
+                f"{meta_prefix}_status": status,
+                f"{meta_prefix}_fetched_at": datetime.now(timezone.utc).isoformat(),
+                count_key: connection.execute(
+                    f"SELECT COUNT(*) FROM {table}"
                 ).fetchone()[0],
             },
         )
@@ -153,6 +179,112 @@ def import_implications(
     finally:
         connection.close()
 
+
+def import_implications(
+    db_path: str | Path,
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    status: str = "active",
+    page_size: int = 1000,
+    delay: float = 0.7,
+    timeout: float = 30.0,
+    fetch_json: Callable[..., Any] = _fetch_json,
+) -> dict[str, Any]:
+    """Paginate the official Tag Implication API into an additive table."""
+    return _import_relation_table(
+        db_path,
+        endpoint="/tag_implications.json",
+        table="tag_implications",
+        meta_prefix="implications",
+        count_key="implication_count",
+        base_url=base_url,
+        status=status,
+        page_size=page_size,
+        delay=delay,
+        timeout=timeout,
+        fetch_json=fetch_json,
+    )
+
+
+def import_aliases(
+    db_path: str | Path,
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    status: str = "active",
+    page_size: int = 1000,
+    delay: float = 0.7,
+    timeout: float = 30.0,
+    fetch_json: Callable[..., Any] = _fetch_json,
+) -> dict[str, Any]:
+    """Paginate the official Tag Alias API into an additive table."""
+    return _import_relation_table(
+        db_path,
+        endpoint="/tag_aliases.json",
+        table="tag_aliases",
+        meta_prefix="aliases",
+        count_key="alias_count",
+        base_url=base_url,
+        status=status,
+        page_size=page_size,
+        delay=delay,
+        timeout=timeout,
+        fetch_json=fetch_json,
+    )
+
+
+def import_deprecations(
+    db_path: str | Path,
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    page_size: int = 1000,
+    delay: float = 0.7,
+    timeout: float = 30.0,
+    fetch_json: Callable[..., Any] = _fetch_json,
+) -> dict[str, Any]:
+    """Import names of tags Danbooru marks is_deprecated (additive table)."""
+    database = Path(db_path).resolve()
+    if not database.is_file():
+        raise FileNotFoundError(f"derived store not found: {database}")
+    imported = 0
+    pages = 0
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    connection = sqlite3.connect(database)
+    try:
+        connection.executescript(_SCHEMA)
+        pages_iter = _api_pages(
+            "/tags.json",
+            {"search[is_deprecated]": "true"},
+            page_size,
+            delay,
+            timeout,
+            fetch_json,
+            base_url=base_url,
+        )
+        for rows in pages_iter:
+            connection.executemany(
+                """
+                INSERT OR REPLACE INTO tag_deprecations(name, fetched_at)
+                VALUES (?, ?)
+                """,
+                [(row["name"], fetched_at) for row in rows],
+            )
+            imported += len(rows)
+            pages += 1
+            connection.commit()
+        _set_meta(
+            connection,
+            {
+                "deprecations_source": f"{base_url}/tags.json?search[is_deprecated]=true",
+                "deprecations_fetched_at": fetched_at,
+                "deprecation_count": connection.execute(
+                    "SELECT COUNT(*) FROM tag_deprecations"
+                ).fetchone()[0],
+            },
+        )
+        connection.commit()
+        return {"imported": imported, "pages": pages}
+    finally:
+        connection.close()
 
 def _wiki_candidates(
     connection: sqlite3.Connection,

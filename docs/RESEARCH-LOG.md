@@ -361,3 +361,9 @@ character 117 / copyright 58 / artist 30 共 **205 条**经全量人工审查后
 
 - `nohup bash -c` 嵌套 shell 丢 PATH 曾静默杀死整个实体长跑(两天后才发现);后台长跑一律直接 `nohup python ...`,启动后必须验证首条记录落盘。
 - 传输层异常(`RemoteDisconnected`=OSError)曾团灭 20h 运行;parallel 客户端两处重试元组补 OSError,引擎加 per-unit 隔离(`1e7012e`)。
+
+## 2026-11-22 · 官方别名/弃用导入与弃用降权
+
+上节已知问题的根治(ADR 0009)。live 探针证实:`black_legwear` 官方 `is_deprecated=true`、帖数已归零、且**无**别名指向——弃用与改名是独立数据,必须分别导:`import-aliases`(tag_aliases,active 41,611 条/42 页)与 `import-deprecations`(tag_deprecations,4,098 名/5 页),均照 ADR 0007 的加性表模式。快照命中弃用 1,183 个 tag,其中 8 个是已发布研究的"色彩+服饰统称"类(black_legwear、looking_away 等)——知识层继续服务(`get` 带 `deprecated: true` 与 `aliased_to`),检索层扣 `2×PRIOR` 罚分沉底。
+
+验收:基准 MRR 0.8837→**0.9156**(弃用 tag 让位,接近 0.9191 峰值),hit@5 0.9574 / hit@10 1.0 / no_match 1.0 / 零失败不变;`黑色丝袜`→black_thighhighs #1 / black_pantyhose #2(black_legwear 沉底);`赛博朋克边缘行者动画`→`cyberpunk_edgerunners` #1、`;d` #1 保持。87 测试全过(新增别名/弃用导入与降权排序 2 条)。

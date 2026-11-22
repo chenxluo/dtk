@@ -187,6 +187,49 @@ class ImportAndSearchTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["tag"], "long_hair")
         self.assertNotIn("looking_at_viewer", [item["tag"] for item in result["results"]])
 
+    def test_deprecated_tag_sinks_below_live_competitor(self) -> None:
+        official = VectorIndex(
+            tag_ids=np.array([2], dtype=np.int64),
+            matrix=np.array([[0.0, 1.0]], dtype=np.float32),
+        )
+        research = VectorIndex(
+            tag_ids=np.array([1], dtype=np.int64),
+            matrix=np.array([[1.0, 0.0]], dtype=np.float32),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.db"
+            derived = Path(tmp) / "derived.db"
+            make_source(source)
+            build_database(source, derived)
+            writer = sqlite3.connect(derived)
+            try:
+                writer.execute(
+                    "CREATE TABLE IF NOT EXISTS tag_deprecations ("
+                    "name TEXT PRIMARY KEY, fetched_at TEXT NOT NULL)"
+                )
+                writer.execute(
+                    "INSERT INTO tag_deprecations VALUES ('looking_at_viewer', '2026-11-22')"
+                )
+                writer.commit()
+            finally:
+                writer.close()
+            conn = open_db(derived)
+            try:
+                result = search(
+                    conn,
+                    "眨眼并张嘴笑",
+                    limit=3,
+                    vector_index=official,
+                    query_vector=np.array([1.0, 0.0], dtype=np.float32),
+                    research_index=research,
+                )
+            finally:
+                conn.close()
+
+        tags = [item["tag"] for item in result["results"]]
+        self.assertEqual(tags[0], "long_hair")
+        self.assertNotEqual(tags[0], "looking_at_viewer")
+
     def test_optional_intent_gate_rejects_nonvisual_query(self) -> None:
         class NoVisualIntent:
             def classify(self, query):
